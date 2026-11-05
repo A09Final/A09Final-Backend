@@ -1,5 +1,13 @@
+# Secrets and local data. Never commit these.
 .env
 secrets/*
 !secrets/.gitkeep
 deploy/mosquitto/config/passwd
+
+# Build output
 /beforefire-backend
+*.test
+*.out
+
+# macOS
+.DS_Store
