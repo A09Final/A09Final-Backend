@@ -1,0 +1,5 @@
+.env
+secrets/*
+!secrets/.gitkeep
+deploy/mosquitto/config/passwd
+/beforefire-backend
