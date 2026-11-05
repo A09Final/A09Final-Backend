@@ -1,6 +1,7 @@
 package device
 
 import (
+	"strings"
 	"testing"
 	"time"
 )
@@ -70,5 +71,33 @@ func TestStatusTracker(t *testing.T) {
 	tracker.Record("DAPUR_A1B2C3", nil)
 	if got := tracker.Get("DAPUR_A1B2C3"); got.Connection != ConnectionUnknown || !got.UpdatedAt.IsZero() {
 		t.Fatalf("after empty payload: %+v", got)
+	}
+}
+
+func TestStatusTrackerListIsSortedAndComplete(t *testing.T) {
+	tracker := NewStatusTracker()
+	tracker.Record("DAPUR_FFFFFF", []byte(StatusOffline))
+	tracker.Record("DAPUR_ALM_A1B2C3", []byte(StatusOnline))
+	tracker.Record("DAPUR_020F3C", []byte(StatusOnline))
+	tracker.Record("DAPUR_123456", []byte("not a status"))
+
+	entries := tracker.List()
+
+	got := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		got = append(got, entry.DeviceID)
+	}
+	want := []string{"DAPUR_020F3C", "DAPUR_ALM_A1B2C3", "DAPUR_FFFFFF"}
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("List() = %v, want %v", got, want)
+	}
+	if entries[0].Connection != ConnectionOnline || entries[2].Connection != ConnectionOffline {
+		t.Fatalf("List() connections = %v, %v", entries[0].Connection, entries[2].Connection)
+	}
+
+	// An empty retained status removes the device from the list.
+	tracker.Record("DAPUR_020F3C", nil)
+	if len(tracker.List()) != 2 {
+		t.Fatalf("List() after removal has %d entries, want 2", len(tracker.List()))
 	}
 }

@@ -31,6 +31,10 @@ type stubStatuses map[string]device.Status
 
 func (s stubStatuses) Get(deviceID string) device.Status { return s[deviceID] }
 
+type stubDevices []device.Entry
+
+func (s stubDevices) List() []device.Entry { return s }
+
 // stubReadings accepts only the key "good-key".
 type stubReadings struct {
 	snapshot telemetry.Snapshot
@@ -213,5 +217,38 @@ func TestSendCommandRejectsBadBodies(t *testing.T) {
 	}
 	if got := call(handler, "GET", "/v1/devices/DAPUR_A1B2C3/commands", "").Code; got != http.StatusMethodNotAllowed {
 		t.Errorf("GET on commands: status %d", got)
+	}
+}
+
+func TestDeviceList(t *testing.T) {
+	handler := NewHandler(Dependencies{
+		Commands: &stubCommands{},
+		Statuses: stubStatuses{},
+		Devices: stubDevices{
+			{DeviceID: "DAPUR_020F3C", Status: device.Status{Connection: device.ConnectionOnline, UpdatedAt: testNow}},
+			{DeviceID: "DAPUR_FFFFFF", Status: device.Status{Connection: device.ConnectionOffline}},
+		},
+		Readings:        &stubReadings{},
+		IsMQTTConnected: func() bool { return true },
+		Now:             func() time.Time { return testNow },
+	})
+
+	recorder := getWithKey(handler, "/v1/devices", "")
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, body %s", recorder.Code, recorder.Body.String())
+	}
+	want := `{"devices":[{"deviceId":"DAPUR_020F3C","connection":"online","updatedAt":"2026-11-04T10:00:00Z"},` +
+		`{"deviceId":"DAPUR_FFFFFF","connection":"offline"}]}`
+	if got := strings.TrimSpace(recorder.Body.String()); got != want {
+		t.Fatalf("body = %s, want %s", got, want)
+	}
+}
+
+func TestDeviceListIsEmptyArrayWithNoDevices(t *testing.T) {
+	recorder := getWithKey(newTestHandler(&stubCommands{}, true), "/v1/devices", "")
+
+	if got := strings.TrimSpace(recorder.Body.String()); got != `{"devices":[]}` {
+		t.Fatalf("body = %s, want an empty list", got)
 	}
 }

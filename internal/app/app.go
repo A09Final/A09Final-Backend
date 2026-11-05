@@ -91,6 +91,7 @@ func New(cfg config.Config, sender alert.Sender, logger *slog.Logger) *App {
 		Handler: httpapi.NewHandler(httpapi.Dependencies{
 			Commands:            application.commands,
 			Statuses:            application.statuses,
+			Devices:             application.statuses,
 			Readings:            application.readings,
 			IsMQTTConnected:     application.mqtt.Connected,
 			TelemetryStaleAfter: cfg.TelemetryStaleAfter,
