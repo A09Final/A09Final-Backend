@@ -1,0 +1,18 @@
+# Mosquitto ACL for BeforeFire.
+# Mosquitto reads this file again after SIGHUP (scripts/*.sh send it).
+
+# The backend reads device messages and sends commands.
+user backend
+topic read beforefire/+/alert
+topic read beforefire/+/ack
+topic read beforefire/+/status
+topic read beforefire/+/telemetry
+topic write beforefire/+/cmd
+
+# Each device can use only its own topics. %u is the MQTT user name, which is
+# the device ID from the sticker, for example DAPUR_A1B2C3.
+pattern write beforefire/%u/alert
+pattern write beforefire/%u/ack
+pattern write beforefire/%u/status
+pattern write beforefire/%u/telemetry
+pattern read beforefire/%u/cmd
