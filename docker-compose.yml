@@ -1,0 +1,81 @@
+# BeforeFire server on the Mac: Mosquitto (MQTT) and the Go backend.
+#
+#   docker compose up -d --build                  start the server
+#   docker compose logs -f backend                show the backend log
+#   docker compose --profile test run --rm test   run all automatic tests
+#   docker compose down                           stop the server
+#
+# The ESP32 and the iPhone connect to the IP address of the Mac on the home
+# Wi-Fi. MQTT (1883) and HTTP (8080) have no encryption, so use them only on
+# the home network. README.md has the full steps.
+
+services:
+  mosquitto:
+    image: eclipse-mosquitto:2
+    restart: unless-stopped
+    ports:
+      # MQTT for the ESP32 boards. Change MQTT_PORT in .env when 1883 is in use on the Mac.
+      - "${MQTT_PORT:-1883}:1883"
+    volumes:
+      - ./deploy/mosquitto/config:/mosquitto/config
+      - mosquitto-data:/mosquitto/data
+
+  backend:
+    build: .
+    restart: unless-stopped
+    # Optional only so that the test profile also runs before .env exists.
+    # The backend itself does not start without MQTT_PASSWORD.
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      MQTT_ADDRESS: mosquitto:1883
+      APNS_KEY_FILE: /run/secrets/AuthKey.p8
+    ports:
+      # HTTP API for the app. Change HTTP_PORT in .env when 8080 is in use on the Mac.
+      - "${HTTP_PORT:-8080}:8080"
+    volumes:
+      - ./secrets:/run/secrets:ro
+    depends_on:
+      - mosquitto
+
+  # --- Automatic tests (start only with --profile test) ---
+
+  # A separate broker with fixed test users, so the tests do not touch the real users.
+  mosquitto-test:
+    image: eclipse-mosquitto:2
+    profiles: ["test"]
+    volumes:
+      - ./deploy/mosquitto/config/acl:/test-config/acl:ro
+    entrypoint:
+      - sh
+      - -c
+      - |
+        set -e
+        mkdir -p /test && cd /test
+        cp /test-config/acl acl
+        printf 'per_listener_settings false\nallow_anonymous false\npassword_file /test/passwd\nacl_file /test/acl\nlistener 1883\n' > mosquitto.conf
+        mosquitto_passwd -c -b passwd backend test-backend-password
+        mosquitto_passwd -b passwd DAPUR_A1B2C3 abcd2345
+        chown -R mosquitto:mosquitto /test
+        chmod 0700 passwd
+        chmod 0600 acl
+        exec mosquitto -c /test/mosquitto.conf
+
+  test:
+    image: golang:1.24
+    profiles: ["test"]
+    working_dir: /src
+    volumes:
+      - .:/src
+      - go-modules:/go/pkg/mod
+    environment:
+      BEFOREFIRE_TEST_MQTT_ADDRESS: mosquitto-test:1883
+      BEFOREFIRE_TEST_BACKEND_PASSWORD: test-backend-password
+    command: sh -c "go test ./... && go test -tags integration -count=1 -v ./internal/app"
+    depends_on:
+      - mosquitto-test
+
+volumes:
+  mosquitto-data:
+  go-modules:
