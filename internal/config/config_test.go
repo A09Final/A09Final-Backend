@@ -28,7 +28,7 @@ func TestLoadDefaults(t *testing.T) {
 	}
 	if config.MQTTAddress != "mosquitto:1883" || config.APNsTopic != "com.dericknorlan.BeforeFire" ||
 		config.AlertExpiry != 15*time.Minute || config.APNsURL() != apns.DevelopmentURL ||
-		config.TelemetryStaleAfter != 30*time.Second {
+		config.TelemetryStaleAfter != 10*time.Second {
 		t.Fatalf("defaults = %+v", config)
 	}
 }
