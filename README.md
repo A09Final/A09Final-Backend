@@ -200,7 +200,7 @@ Isi notifikasi per kondisi:
 
 Kalau `stoveTemperatureC` ada, isi notifikasi ditambah "Stove: 232 °C." (kecuali `normal`).
 
-**3. Mengirim telemetry** (data untuk layar Monitor) setiap beberapa detik, misalnya 5 detik, ke `beforefire/<id>/telemetry` sebagai pesan **retained**:
+**3. Mengirim telemetry** (data untuk layar Monitor) setiap 2 detik, dan saat itu juga kalau level bahaya atau keberadaan orang berubah, ke `beforefire/<id>/telemetry` sebagai pesan **retained**:
 
 ```json
 {
@@ -309,6 +309,7 @@ Endpoint:
 | Method | Path | Fungsi |
 |---|---|---|
 | `GET` | `/healthz` | `200 {"mqttConnected":true}` atau `503` |
+| `GET` | `/v1/devices` | `{"devices":[{"deviceId":"…","connection":"online\|offline\|unknown","updatedAt":"…"}]}`, semua alat yang pernah mengirim status sejak backend menyala. App memakainya untuk menemukan sensor yang sudah punya Wi-Fi. Hanya berisi ID dan status, tanpa data sensor. |
 | `GET` | `/v1/devices/{deviceId}/status` | `{"deviceId":"…","connection":"online\|offline\|unknown","updatedAt":"…"}` |
 | `GET` | `/v1/devices/{deviceId}/readings` | data sensor terkini. Header: `Authorization: Bearer <readKey>` |
 | `POST` | `/v1/devices/{deviceId}/commands` | kirim perintah, tunggu jawaban alat (maks `COMMAND_ANSWER_TIMEOUT`) |
@@ -353,7 +354,7 @@ Jawaban:
 | 401 | `invalid_read_key` | kunci salah atau tidak dikirim (PoP salah, atau alat sudah membuat PoP baru) |
 | 404 | `no_readings` / `unknown_device_id` | alat belum pernah mengirim telemetry / serial salah |
 
-- `isStale: true` artinya tidak ada data baru selama `TELEMETRY_STALE_AFTER` (default 30 detik). Tampilkan sebagai data lama, bukan kondisi normal.
+- `isStale: true` artinya tidak ada data baru selama `TELEMETRY_STALE_AFTER` (default 10 detik). Tampilkan sebagai data lama, bukan kondisi normal.
 - Nilai yang tidak ada di `readings` atau sensornya tercantum di `unavailableSensors` ditampilkan sebagai "tidak tersedia".
 - Ambil ulang setiap beberapa detik saat layar Monitor terbuka.
 

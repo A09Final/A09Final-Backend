@@ -21,6 +21,11 @@ type CommandExecutor interface {
 	Execute(ctx context.Context, deviceID string, request command.Request) (command.Ack, error)
 }
 
+// DeviceLister is implemented by *device.StatusTracker.
+type DeviceLister interface {
+	List() []device.Entry
+}
+
 // ReadingsSource is implemented by *telemetry.Store.
 type ReadingsSource interface {
 	Read(deviceID, readKey string) (telemetry.Snapshot, error)
@@ -30,6 +35,7 @@ type ReadingsSource interface {
 type Dependencies struct {
 	Commands        CommandExecutor
 	Statuses        command.StatusSource
+	Devices         DeviceLister
 	Readings        ReadingsSource
 	IsMQTTConnected func() bool
 	// Readings older than this are marked isStale in the response.
@@ -61,6 +67,7 @@ const (
 // NewHandler returns the routes:
 //
 //	GET  /healthz
+//	GET  /v1/devices
 //	GET  /v1/devices/{deviceId}/status
 //	GET  /v1/devices/{deviceId}/readings   (header: Authorization: Bearer <readKey>)
 //	POST /v1/devices/{deviceId}/commands
@@ -74,6 +81,7 @@ func NewHandler(dependencies Dependencies) http.Handler {
 	routes := &routes{Dependencies: dependencies}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", routes.health)
+	mux.HandleFunc("GET /v1/devices", routes.deviceList)
 	mux.HandleFunc("GET /v1/devices/{deviceId}/status", routes.deviceStatus)
 	mux.HandleFunc("GET /v1/devices/{deviceId}/readings", routes.deviceReadings)
 	mux.HandleFunc("POST /v1/devices/{deviceId}/commands", routes.sendCommand)
@@ -109,13 +117,33 @@ func (r *routes) deviceStatus(writer http.ResponseWriter, request *http.Request)
 	if !ok {
 		return
 	}
-	status := r.Statuses.Get(deviceID)
+	writeJSON(writer, http.StatusOK, newStatusResponse(deviceID, r.Statuses.Get(deviceID)))
+}
+
+type deviceListResponse struct {
+	Devices []statusResponse `json:"devices"`
+}
+
+// deviceList returns each device that sent a status since the backend
+// started. It shows only device IDs and online state, the same values as
+// /status, and no sensor values.
+func (r *routes) deviceList(writer http.ResponseWriter, _ *http.Request) {
+	response := deviceListResponse{Devices: []statusResponse{}}
+	if r.Devices != nil {
+		for _, entry := range r.Devices.List() {
+			response.Devices = append(response.Devices, newStatusResponse(entry.DeviceID, entry.Status))
+		}
+	}
+	writeJSON(writer, http.StatusOK, response)
+}
+
+func newStatusResponse(deviceID string, status device.Status) statusResponse {
 	response := statusResponse{DeviceID: deviceID, Connection: connectionText(status.Connection)}
 	if !status.UpdatedAt.IsZero() {
 		updatedAt := status.UpdatedAt.UTC()
 		response.UpdatedAt = &updatedAt
 	}
-	writeJSON(writer, http.StatusOK, response)
+	return response
 }
 
 func connectionText(connection device.Connection) string {

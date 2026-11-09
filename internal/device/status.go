@@ -1,6 +1,7 @@
 package device
 
 import (
+	"sort"
 	"sync"
 	"time"
 )
@@ -55,6 +56,25 @@ func (t *StatusTracker) Record(deviceID string, payload []byte) {
 	t.mu.Lock()
 	t.statuses[deviceID] = Status{Connection: connection, UpdatedAt: t.now()}
 	t.mu.Unlock()
+}
+
+// Entry is the status of one device in a list.
+type Entry struct {
+	DeviceID string
+	Status
+}
+
+// List returns the last known status of each device, sorted by device ID.
+// The app uses it to find sensors that already have Wi-Fi.
+func (t *StatusTracker) List() []Entry {
+	t.mu.RLock()
+	entries := make([]Entry, 0, len(t.statuses))
+	for deviceID, status := range t.statuses {
+		entries = append(entries, Entry{DeviceID: deviceID, Status: status})
+	}
+	t.mu.RUnlock()
+	sort.Slice(entries, func(i, j int) bool { return entries[i].DeviceID < entries[j].DeviceID })
+	return entries
 }
 
 // Get returns the last known status. Connection is ConnectionUnknown when the

@@ -58,7 +58,7 @@ const (
 	defaultAlertDedupeWindow      = 30 * time.Minute
 	defaultCommandAnswerTimeout   = 8 * time.Second
 	defaultCommandClockSkew       = 5 * time.Minute
-	defaultTelemetryStaleAfter    = 30 * time.Second
+	defaultTelemetryStaleAfter    = 10 * time.Second
 	defaultLogLevel               = "info"
 	defaultAlarmInterruptionLevel = alert.InterruptionTimeSensitive
 )
