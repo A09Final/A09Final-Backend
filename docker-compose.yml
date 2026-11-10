@@ -31,11 +31,13 @@ services:
     environment:
       MQTT_ADDRESS: mosquitto:1883
       APNS_KEY_FILE: /run/secrets/AuthKey.p8
+      LIVE_ACTIVITY_STATE_FILE: /state/live-activity.json
     ports:
       # HTTP API for the app. Change HTTP_PORT in .env when 8080 is in use on the Mac.
       - "${HTTP_PORT:-8080}:8080"
     volumes:
       - ./secrets:/run/secrets:ro
+      - live-activity-state:/state
     depends_on:
       - mosquitto
 
@@ -77,5 +79,6 @@ services:
       - mosquitto-test
 
 volumes:
+  live-activity-state:
   mosquitto-data:
   go-modules:

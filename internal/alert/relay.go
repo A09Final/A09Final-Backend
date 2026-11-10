@@ -26,6 +26,7 @@ type RelayConfig struct {
 	Expiry                 time.Duration // after this time APNs stops trying to deliver
 	AlarmInterruptionLevel string
 	OnUnregisteredToken    UnregisteredTokenHandler
+	OnAlarm                func(context.Context, string, Report)
 	Logger                 *slog.Logger
 	Now                    func() time.Time
 }
@@ -86,6 +87,13 @@ func (r *Relay) Handle(ctx context.Context, deviceID string, payload []byte) (De
 		result DeliveryResult
 		group  sync.WaitGroup
 	)
+	if report.Condition == ConditionAlarm && r.config.OnAlarm != nil {
+		group.Add(1)
+		go func() {
+			defer group.Done()
+			r.config.OnAlarm(ctx, deviceID, report)
+		}()
+	}
 	for _, token := range report.PushTokens {
 		group.Add(1)
 		go func() {

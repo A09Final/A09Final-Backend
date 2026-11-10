@@ -129,6 +129,12 @@ Supaya alamat itu tidak berubah:
 
 App juga perlu capability **Push Notifications**, dan push hanya bisa dites di iPhone fisik (bukan simulator).
 
+### Live Activity saat BeforeFire tertutup
+
+Docker Compose menyimpan pendaftaran ActivityKit dan sesi Alarm di volume `live-activity-state`. Jika backend dijalankan langsung, isi `LIVE_ACTIVITY_STATE_FILE` dengan path file pada direktori yang bisa ditulis dan dipertahankan setelah restart. Endpoint pendaftaran memakai read key sensor yang sudah ditautkan. File tersebut berisi token perangkat.
+
+Untuk uji iPhone, gunakan konfigurasi APNs yang cocok dengan signing app. Buka BeforeFire sekali, izinkan notifikasi dan Live Activities, lalu tautkan sensor. Pakai kejadian uji. Cek bahwa push Alarm memulai Live Activity, ketukan membuka halaman Alarm, dan laporan Normal yang valid serta terbaru mengakhiri aktivitas. Warning 1, Warning 2, data kedaluwarsa, dan data sensor yang hilang mempertahankan sesi Alarm. Uji saat app di latar belakang dan saat ditutup dari App Switcher.
+
 ### Perintah lain
 
 | Perintah | Fungsi |

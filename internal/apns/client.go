@@ -22,9 +22,10 @@ const (
 
 // Push types and priorities from the APNs request headers documentation.
 const (
-	PushTypeAlert       = "alert"
-	PriorityImmediate   = 10
-	PriorityPowerSaving = 5
+	PushTypeAlert        = "alert"
+	PushTypeLiveActivity = "liveactivity"
+	PriorityImmediate    = 10
+	PriorityPowerSaving  = 5
 )
 
 const (
@@ -149,7 +150,11 @@ func (c *Client) sendOnce(ctx context.Context, notification Notification) error 
 		return err
 	}
 	request.Header.Set("authorization", "bearer "+providerToken)
-	request.Header.Set("apns-topic", c.config.Topic)
+	topic := c.config.Topic
+	if notification.PushType == PushTypeLiveActivity {
+		topic += ".push-type.liveactivity"
+	}
+	request.Header.Set("apns-topic", topic)
 	request.Header.Set("apns-push-type", notification.PushType)
 	request.Header.Set("apns-priority", strconv.Itoa(notification.Priority))
 	request.Header.Set("apns-expiration", expirationHeader(notification.Expiration))

@@ -13,6 +13,7 @@ import (
 	"github.com/dericknorlan/beforefire-backend/internal/alert"
 	"github.com/dericknorlan/beforefire-backend/internal/command"
 	"github.com/dericknorlan/beforefire-backend/internal/device"
+	"github.com/dericknorlan/beforefire-backend/internal/liveactivity"
 	"github.com/dericknorlan/beforefire-backend/internal/telemetry"
 )
 
@@ -37,6 +38,7 @@ type Dependencies struct {
 	Statuses        command.StatusSource
 	Devices         DeviceLister
 	Readings        ReadingsSource
+	LiveActivities  *liveactivity.Service
 	IsMQTTConnected func() bool
 	// Readings older than this are marked isStale in the response.
 	TelemetryStaleAfter time.Duration
@@ -85,6 +87,7 @@ func NewHandler(dependencies Dependencies) http.Handler {
 	mux.HandleFunc("GET /v1/devices/{deviceId}/status", routes.deviceStatus)
 	mux.HandleFunc("GET /v1/devices/{deviceId}/readings", routes.deviceReadings)
 	mux.HandleFunc("POST /v1/devices/{deviceId}/commands", routes.sendCommand)
+	mux.HandleFunc("PUT /v1/devices/{deviceId}/live-activity-token", routes.registerLiveActivityToken)
 	return mux
 }
 
@@ -168,6 +171,7 @@ type readingsResponse struct {
 	AgeSeconds         int64                 `json:"ageSeconds"`
 	IsStale            bool                  `json:"isStale"`
 	Connection         string                `json:"connection"`
+	RecoveryConfirmed  bool                  `json:"recoveryConfirmed"`
 }
 
 func (r *routes) deviceReadings(writer http.ResponseWriter, request *http.Request) {
@@ -191,7 +195,10 @@ func (r *routes) deviceReadings(writer http.ResponseWriter, request *http.Reques
 	}
 
 	measuredAt := snapshot.MeasuredTime()
-	age := max(r.Now().Sub(measuredAt), 0)
+	now := r.Now()
+	age := max(now.Sub(measuredAt), 0)
+	connection := r.Statuses.Get(deviceID).Connection
+	isStale := age > r.TelemetryStaleAfter
 	unavailable := snapshot.Report.UnavailableSensors
 	if unavailable == nil {
 		unavailable = []string{}
@@ -205,8 +212,9 @@ func (r *routes) deviceReadings(writer http.ResponseWriter, request *http.Reques
 		UnavailableSensors: unavailable,
 		MeasuredAt:         measuredAt.UTC(),
 		AgeSeconds:         int64(age / time.Second),
-		IsStale:            age > r.TelemetryStaleAfter,
-		Connection:         connectionText(r.Statuses.Get(deviceID).Connection),
+		IsStale:            isStale,
+		Connection:         connectionText(connection),
+		RecoveryConfirmed:  !isStale && !measuredAt.After(now) && connection == device.ConnectionOnline && snapshot.ConfirmsNormal(),
 	})
 }
 
