@@ -158,15 +158,16 @@ func connectionText(connection device.Connection) string {
 }
 
 type readingsResponse struct {
-	DeviceID           string             `json:"deviceId"`
-	Condition          alert.Condition    `json:"condition,omitempty"`
-	Score              *float64           `json:"score,omitempty"`
-	Readings           telemetry.Readings `json:"readings"`
-	UnavailableSensors []string           `json:"unavailableSensors"`
-	MeasuredAt         time.Time          `json:"measuredAt"`
-	AgeSeconds         int64              `json:"ageSeconds"`
-	IsStale            bool               `json:"isStale"`
-	Connection         string             `json:"connection"`
+	DeviceID           string                `json:"deviceId"`
+	Condition          alert.Condition       `json:"condition,omitempty"`
+	Score              *float64              `json:"score,omitempty"`
+	Assessment         *telemetry.Assessment `json:"assessment,omitempty"`
+	Readings           telemetry.Readings    `json:"readings"`
+	UnavailableSensors []string              `json:"unavailableSensors"`
+	MeasuredAt         time.Time             `json:"measuredAt"`
+	AgeSeconds         int64                 `json:"ageSeconds"`
+	IsStale            bool                  `json:"isStale"`
+	Connection         string                `json:"connection"`
 }
 
 func (r *routes) deviceReadings(writer http.ResponseWriter, request *http.Request) {
@@ -199,6 +200,7 @@ func (r *routes) deviceReadings(writer http.ResponseWriter, request *http.Reques
 		DeviceID:           deviceID,
 		Condition:          snapshot.Report.Condition,
 		Score:              snapshot.Report.Score,
+		Assessment:         snapshot.Report.Assessment,
 		Readings:           snapshot.Report.Readings,
 		UnavailableSensors: unavailable,
 		MeasuredAt:         measuredAt.UTC(),
