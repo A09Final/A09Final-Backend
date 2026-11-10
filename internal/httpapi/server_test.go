@@ -113,6 +113,47 @@ func TestDeviceReadings(t *testing.T) {
 	}
 }
 
+func TestDeviceReadingsForwardsAssessment(t *testing.T) {
+	const deviceID = "DAPUR_A1B2C3"
+	const readKey = "good-key"
+	const firmwareAssessment = `{"condition":"warning2","valid":true,"rule_id":10,"absence_duration_seconds":0}`
+	const invalidAssessment = `{"condition":"warning2","valid":false}`
+	base := `{"readKeyHash":"` + telemetry.ReadKeyHash(readKey) + `","condition":"warning2","readings":{"stoveTemperatureC":225}`
+	store := telemetry.NewStore()
+	handler := newTestHandlerWithReadings(&stubCommands{}, store, true)
+
+	for _, test := range []struct {
+		name     string
+		metadata string
+		want     string
+	}{
+		{"firmware rule", `,"assessment":` + firmwareAssessment, firmwareAssessment},
+		{"older firmware", "", ""},
+		{"invalid fuzzy result", `,"assessment":` + invalidAssessment, invalidAssessment},
+		{"malformed metadata", `,"assessment":{"rule_id":"unknown"}`, ""},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if err := store.Record(deviceID, []byte(base+test.metadata+`}`)); err != nil {
+				t.Fatal(err)
+			}
+			recorder := getWithKey(handler, "/v1/devices/"+deviceID+"/readings", "Bearer "+readKey)
+			if recorder.Code != http.StatusOK {
+				t.Fatalf("status %d body %s", recorder.Code, recorder.Body)
+			}
+			var response struct {
+				Condition  string          `json:"condition"`
+				Assessment json.RawMessage `json:"assessment"`
+			}
+			if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+				t.Fatal(err)
+			}
+			if response.Condition != "warning2" || string(response.Assessment) != test.want {
+				t.Errorf("condition = %q, assessment = %s, want warning2 and %s", response.Condition, response.Assessment, test.want)
+			}
+		})
+	}
+}
+
 func TestDeviceReadingsErrors(t *testing.T) {
 	handler := newTestHandlerWithReadings(&stubCommands{}, &stubReadings{hasData: true}, true)
 	for name, authorization := range map[string]string{"missing": "", "wrong": "Bearer bad-key", "not bearer": "Basic good-key"} {

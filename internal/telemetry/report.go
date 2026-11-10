@@ -41,12 +41,21 @@ type Readings struct {
 	PressureHPa       *float64 `json:"pressureHPa,omitempty"`      // BME688
 }
 
+// Assessment carries the firmware's fuzzy rule metadata for the Monitor screen.
+type Assessment struct {
+	Condition              alert.Condition `json:"condition,omitempty"`
+	Valid                  bool            `json:"valid"`
+	RuleID                 *int            `json:"rule_id,omitempty"`
+	AbsenceDurationSeconds *int64          `json:"absence_duration_seconds,omitempty"`
+}
+
 // Report is the JSON body that the sensor unit publishes to
 // beforefire/<deviceID>/telemetry as a retained message.
 type Report struct {
 	// Condition is the result of evaluateFuzzy(). It is optional until the firmware calls it.
-	Condition alert.Condition `json:"condition,omitempty"`
-	Score     *float64        `json:"score,omitempty"`
+	Condition  alert.Condition `json:"condition,omitempty"`
+	Score      *float64        `json:"score,omitempty"`
+	Assessment *Assessment     `json:"assessment,omitempty"`
 	// MeasuredAt is Unix seconds. 0 when the board has no clock yet.
 	MeasuredAt int64    `json:"measuredAt,omitempty"`
 	Readings   Readings `json:"readings"`
@@ -73,8 +82,19 @@ func ParseReport(payload []byte, now time.Time) (Report, error) {
 		return Report{}, &ValidationError{Field: "payload", Problem: "too large"}
 	}
 	var report Report
-	if err := json.Unmarshal(payload, &report); err != nil {
+	incoming := struct {
+		*Report
+		Assessment json.RawMessage `json:"assessment"`
+	}{Report: &report}
+	if err := json.Unmarshal(payload, &incoming); err != nil {
 		return Report{}, &ValidationError{Field: "payload", Problem: "not valid JSON"}
+	}
+	// Keep readings available when optional rule metadata has an invalid format.
+	if len(incoming.Assessment) > 0 {
+		var assessment *Assessment
+		if err := json.Unmarshal(incoming.Assessment, &assessment); err == nil {
+			report.Assessment = assessment
+		}
 	}
 	if !hexHashPattern.MatchString(report.ReadKeyHash) {
 		return Report{}, &ValidationError{Field: "readKeyHash", Problem: "must be 64 lower-case hexadecimal characters"}
