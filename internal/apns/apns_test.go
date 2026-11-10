@@ -179,6 +179,21 @@ func TestSendSetsAPNsHeaders(t *testing.T) {
 	}
 }
 
+func TestSendUsesLiveActivityTopic(t *testing.T) {
+	client, requests := newTestAPNs(t, func(int) (int, string) { return http.StatusOK, "" })
+	err := client.Send(context.Background(), Notification{
+		DeviceToken: "activity-token", PushType: PushTypeLiveActivity, Priority: PriorityImmediate,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	headers := (*requests)[0].headers
+	if headers.Get("Apns-Topic") != "com.dericknorlan.BeforeFire.push-type.liveactivity" ||
+		headers.Get("Apns-Push-Type") != "liveactivity" {
+		t.Errorf("wrong headers for ActivityKit")
+	}
+}
+
 func TestSendReportsUnregisteredWithoutRetry(t *testing.T) {
 	client, requests := newTestAPNs(t, func(int) (int, string) { return http.StatusGone, "Unregistered" })
 	err := client.Send(context.Background(), Notification{DeviceToken: "abc", PushType: PushTypeAlert, Priority: 10})

@@ -40,7 +40,8 @@ type Config struct {
 	CommandAnswerTimeout time.Duration
 	CommandClockSkew     time.Duration
 
-	TelemetryStaleAfter time.Duration
+	TelemetryStaleAfter   time.Duration
+	LiveActivityStateFile string
 
 	LogLevel string
 }
@@ -91,7 +92,8 @@ func Load() (Config, error) {
 		CommandAnswerTimeout: reader.duration("COMMAND_ANSWER_TIMEOUT", defaultCommandAnswerTimeout),
 		CommandClockSkew:     reader.duration("COMMAND_CLOCK_SKEW", defaultCommandClockSkew),
 
-		TelemetryStaleAfter: reader.duration("TELEMETRY_STALE_AFTER", defaultTelemetryStaleAfter),
+		TelemetryStaleAfter:   reader.duration("TELEMETRY_STALE_AFTER", defaultTelemetryStaleAfter),
+		LiveActivityStateFile: reader.text("LIVE_ACTIVITY_STATE_FILE", ""),
 
 		LogLevel: strings.ToLower(reader.text("LOG_LEVEL", defaultLogLevel)),
 	}

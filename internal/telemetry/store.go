@@ -4,6 +4,8 @@ import (
 	"errors"
 	"sync"
 	"time"
+
+	"github.com/dericknorlan/beforefire-backend/internal/alert"
 )
 
 // Errors that Read returns.
@@ -25,6 +27,14 @@ func (s Snapshot) MeasuredTime() time.Time {
 		return time.Unix(s.Report.MeasuredAt, 0)
 	}
 	return s.ReceivedAt
+}
+
+// ConfirmsNormal requires a Normal label and readings from all three sensors.
+func (s Snapshot) ConfirmsNormal() bool {
+	report := s.Report
+	return report.Condition == alert.ConditionNormal && !report.AssessmentMalformed && len(report.UnavailableSensors) == 0 &&
+		report.Readings.StoveTemperatureC != nil && report.Readings.IAQ != nil && report.Readings.Presence != nil &&
+		(report.Assessment == nil || (report.Assessment.Valid && report.Assessment.Condition == alert.ConditionNormal))
 }
 
 // Store keeps the latest telemetry of each device in memory.
@@ -61,9 +71,7 @@ func (s *Store) Record(deviceID string, payload []byte) error {
 // Read returns the latest snapshot when readKey matches the hash that the device sent.
 // It returns ErrNoReadings before the first message of the device.
 func (s *Store) Read(deviceID, readKey string) (Snapshot, error) {
-	s.mu.RLock()
-	snapshot, ok := s.snapshots[deviceID]
-	s.mu.RUnlock()
+	snapshot, ok := s.Latest(deviceID)
 	if !ok {
 		return Snapshot{}, ErrNoReadings
 	}
@@ -71,4 +79,12 @@ func (s *Store) Read(deviceID, readKey string) (Snapshot, error) {
 		return Snapshot{}, ErrInvalidReadKey
 	}
 	return snapshot, nil
+}
+
+// Latest returns the server's copy of the most recent reading.
+func (s *Store) Latest(deviceID string) (Snapshot, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	snapshot, ok := s.snapshots[deviceID]
+	return snapshot, ok
 }

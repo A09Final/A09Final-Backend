@@ -15,6 +15,7 @@ import (
 	"github.com/dericknorlan/beforefire-backend/internal/config"
 	"github.com/dericknorlan/beforefire-backend/internal/device"
 	"github.com/dericknorlan/beforefire-backend/internal/httpapi"
+	"github.com/dericknorlan/beforefire-backend/internal/liveactivity"
 	"github.com/dericknorlan/beforefire-backend/internal/mqtt"
 	"github.com/dericknorlan/beforefire-backend/internal/telemetry"
 )
@@ -29,14 +30,15 @@ const (
 
 // App is the complete backend.
 type App struct {
-	config   config.Config
-	logger   *slog.Logger
-	mqtt     *mqtt.Client
-	relay    *alert.Relay
-	commands *command.Service
-	statuses *device.StatusTracker
-	readings *telemetry.Store
-	server   *http.Server
+	config         config.Config
+	logger         *slog.Logger
+	mqtt           *mqtt.Client
+	relay          *alert.Relay
+	commands       *command.Service
+	statuses       *device.StatusTracker
+	readings       *telemetry.Store
+	liveActivities *liveactivity.Service
+	server         *http.Server
 }
 
 // New builds the backend. sender is *apns.Client or apns.DryRunSender.
@@ -77,12 +79,36 @@ func New(cfg config.Config, sender alert.Sender, logger *slog.Logger) *App {
 		Logger:           logger,
 	})
 
+	var onAlarm func(context.Context, string, alert.Report)
+	if cfg.LiveActivityStateFile != "" {
+		activities, err := liveactivity.Open(cfg.LiveActivityStateFile, sender, logger)
+		if err != nil {
+			logger.Error("Live Activity store unavailable", "error", err)
+		} else {
+			application.liveActivities = activities
+			onAlarm = func(ctx context.Context, deviceID string, report alert.Report) {
+				now := time.Now()
+				if snapshot, ok := application.readings.Latest(deviceID); ok && snapshot.Report.MeasuredAt > report.IssuedAt &&
+					application.statuses.Get(deviceID).Connection == device.ConnectionOnline &&
+					snapshot.ConfirmsNormal() && !snapshot.MeasuredTime().After(now) && now.Sub(snapshot.MeasuredTime()) <= cfg.TelemetryStaleAfter {
+					return
+				}
+				activities.Alarm(ctx, deviceID, report)
+				// The MQTT alert and the newer telemetry can be handled concurrently.
+				if snapshot, ok := application.readings.Latest(deviceID); ok && snapshot.Report.MeasuredAt > 0 &&
+					application.statuses.Get(deviceID).Connection == device.ConnectionOnline {
+					activities.ObserveTelemetry(deviceID, snapshot, false, time.Now(), cfg.TelemetryStaleAfter)
+				}
+			}
+		}
+	}
 	application.relay = alert.NewRelay(alert.RelayConfig{
 		Sender:                 sender,
 		Deduplicator:           alert.NewDeduplicator(cfg.AlertDedupeWindow),
 		Expiry:                 cfg.AlertExpiry,
 		AlarmInterruptionLevel: cfg.AlarmInterruptionLevel,
 		OnUnregisteredToken:    application.commands.RemovePushToken,
+		OnAlarm:                onAlarm,
 		Logger:                 logger,
 	})
 
@@ -93,6 +119,7 @@ func New(cfg config.Config, sender alert.Sender, logger *slog.Logger) *App {
 			Statuses:            application.statuses,
 			Devices:             application.statuses,
 			Readings:            application.readings,
+			LiveActivities:      application.liveActivities,
 			IsMQTTConnected:     application.mqtt.Connected,
 			TelemetryStaleAfter: cfg.TelemetryStaleAfter,
 			Logger:              logger,
@@ -152,6 +179,12 @@ func (a *App) handleMessage(message mqtt.Message) {
 	case device.KindTelemetry:
 		if err := a.readings.Record(deviceID, message.Payload); err != nil {
 			a.logger.Warn("telemetry rejected", "deviceId", deviceID, "error", err)
+			return
+		}
+		if a.liveActivities != nil && a.statuses.Get(deviceID).Connection == device.ConnectionOnline {
+			if snapshot, ok := a.readings.Latest(deviceID); ok {
+				a.liveActivities.ObserveTelemetry(deviceID, snapshot, message.Retained, time.Now(), a.config.TelemetryStaleAfter)
+			}
 		}
 	}
 }

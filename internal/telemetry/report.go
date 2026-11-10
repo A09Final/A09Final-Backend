@@ -53,9 +53,10 @@ type Assessment struct {
 // beforefire/<deviceID>/telemetry as a retained message.
 type Report struct {
 	// Condition is the result of evaluateFuzzy(). It is optional until the firmware calls it.
-	Condition  alert.Condition `json:"condition,omitempty"`
-	Score      *float64        `json:"score,omitempty"`
-	Assessment *Assessment     `json:"assessment,omitempty"`
+	Condition           alert.Condition `json:"condition,omitempty"`
+	Score               *float64        `json:"score,omitempty"`
+	Assessment          *Assessment     `json:"assessment,omitempty"`
+	AssessmentMalformed bool            `json:"-"`
 	// MeasuredAt is Unix seconds. 0 when the board has no clock yet.
 	MeasuredAt int64    `json:"measuredAt,omitempty"`
 	Readings   Readings `json:"readings"`
@@ -92,7 +93,9 @@ func ParseReport(payload []byte, now time.Time) (Report, error) {
 	// Keep readings available when optional rule metadata has an invalid format.
 	if len(incoming.Assessment) > 0 {
 		var assessment *Assessment
-		if err := json.Unmarshal(incoming.Assessment, &assessment); err == nil {
+		if err := json.Unmarshal(incoming.Assessment, &assessment); err != nil {
+			report.AssessmentMalformed = true
+		} else {
 			report.Assessment = assessment
 		}
 	}
