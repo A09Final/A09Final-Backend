@@ -25,17 +25,16 @@ func IsValidInterruptionLevel(level string) bool {
 	return false
 }
 
-// User-facing text. "Check your kitchen now" is the same title that the app
-// uses in AlarmActivityAttributes.
+// User-facing push text for each condition.
 const (
-	titleNormal   = "Kitchen readings are normal"
-	bodyNormal    = "The readings are in the normal range again."
+	titleNormal   = "Kitchen back to normal"
+	bodyNormal    = "The sensor readings are back in the normal range."
 	titleWarning1 = "Check your kitchen"
-	bodyWarning1  = "The stove is on. Make sure that somebody watches it."
-	titleWarning2 = "Kitchen warning"
-	bodyWarning2  = "The stove is hot and nobody is near it. Check the kitchen soon."
-	titleAlarm    = "Check your kitchen now"
-	bodyAlarm     = "Danger near the stove. Go to the kitchen now."
+	bodyWarning1  = "The cooking area needs attention. Check the stove and the area around it."
+	titleWarning2 = "Check the stove now"
+	bodyWarning2  = "Conditions near the stove may be unsafe. Turn off the stove if you can do so safely."
+	titleAlarm    = "Stove alarm"
+	bodyAlarm     = "Turn off the stove now if you can safely reach it. If you can’t, call someone nearby for help."
 	stoveDetail   = " Stove: %d °C."
 	soundName     = "default"
 )
