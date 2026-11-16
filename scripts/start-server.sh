@@ -155,8 +155,11 @@ main() {
       echo "Docker is not running. Open Docker Desktop and run this script again." >&2
       exit 1
     fi
-    if [ ! -f .env ]; then
-      echo ".env is missing. Run: cp .env.example .env (README.md, step 2)." >&2
+    local password
+    password="$(env_value MQTT_PASSWORD "")"
+    if [ ! -f .env ] || [ -z "$password" ] || [ "$password" = "change-me" ] \
+        || [ ! -f deploy/mosquitto/config/passwd ]; then
+      echo "This Mac is not set up yet. Run first: scripts/setup-server.sh <Serial> <PoP>" >&2
       exit 1
     fi
     docker compose up -d ${compose_args[@]+"${compose_args[@]}"}

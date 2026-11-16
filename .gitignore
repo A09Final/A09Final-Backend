@@ -1,5 +1,6 @@
 # Secrets and local data. Never commit these.
 .env
+.env.backup
 secrets/*
 !secrets/.gitkeep
 deploy/mosquitto/config/passwd
