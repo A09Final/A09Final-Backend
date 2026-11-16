@@ -2,6 +2,7 @@
 # Manage Mosquitto users for BeforeFire.
 #
 #   scripts/mqtt-user.sh init                      create the passwd file with the backend user (MQTT_PASSWORD in .env)
+#   scripts/mqtt-user.sh backend                   set the backend user password from .env again; devices stay
 #   scripts/mqtt-user.sh add DAPUR_A1B2C3 PASSWORD add or change a device (prototype: PASSWORD is the PoP from the sticker)
 #   scripts/mqtt-user.sh add DAPUR_A1B2C3          add a device with a new random password and print it
 #   scripts/mqtt-user.sh remove DAPUR_A1B2C3       remove a device; it cannot connect again
@@ -16,7 +17,7 @@ readonly ACL_FILE=/mosquitto/config/acl
 readonly DEVICE_ID_PATTERN='^DAPUR_(ALM_)?[0-9A-F]{6}$'
 
 usage() {
-  sed -n '2,8p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '2,9p' "$0" | sed 's/^# \{0,1\}//'
   exit 1
 }
 
@@ -52,6 +53,18 @@ check_device_id() {
   fi
 }
 
+# Reads the backend user and password from .env into NEW_USER and NEW_PASSWORD.
+read_backend_user() {
+  [ -f .env ] || { echo "Create .env first: scripts/setup-server.sh" >&2; exit 1; }
+  NEW_USER="$(grep -E '^MQTT_USERNAME=' .env | tail -n 1 | cut -d= -f2- || true)"
+  NEW_USER="${NEW_USER:-backend}"
+  NEW_PASSWORD="$(grep -E '^MQTT_PASSWORD=' .env | tail -n 1 | cut -d= -f2- || true)"
+  if [ -z "$NEW_PASSWORD" ] || [ "$NEW_PASSWORD" = "change-me" ]; then
+    echo "Set MQTT_PASSWORD in .env to a long random value first, or run scripts/setup-server.sh." >&2
+    exit 1
+  fi
+}
+
 command_name="${1:-}"
 case "$command_name" in
   init)
@@ -59,17 +72,18 @@ case "$command_name" in
       echo "deploy/mosquitto/config/passwd exists. Remove it first to make a new file." >&2
       exit 1
     fi
-    [ -f .env ] || { echo "Create .env from .env.example first." >&2; exit 1; }
-    NEW_USER="$(grep -E '^MQTT_USERNAME=' .env | cut -d= -f2- || true)"
-    NEW_USER="${NEW_USER:-backend}"
-    NEW_PASSWORD="$(grep -E '^MQTT_PASSWORD=' .env | cut -d= -f2-)"
-    if [ -z "$NEW_PASSWORD" ] || [ "$NEW_PASSWORD" = "change-me" ]; then
-      echo "Set MQTT_PASSWORD in .env to a long random value first." >&2
-      exit 1
-    fi
+    read_backend_user
     run_in_mosquitto "mosquitto_passwd -c -b $PASSWD_FILE \"\$NEW_USER\" \"\$NEW_PASSWORD\""
     fix_permissions
     echo "Created the passwd file with user '$NEW_USER'."
+    reload_broker
+    ;;
+  backend)
+    [ -f deploy/mosquitto/config/passwd ] || { echo "Run 'scripts/mqtt-user.sh init' first." >&2; exit 1; }
+    read_backend_user
+    run_in_mosquitto "mosquitto_passwd -b $PASSWD_FILE \"\$NEW_USER\" \"\$NEW_PASSWORD\""
+    fix_permissions
+    echo "Set the password of user '$NEW_USER' from .env. Registered devices stay."
     reload_broker
     ;;
   add)

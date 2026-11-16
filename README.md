@@ -16,7 +16,7 @@ ESP32-S3 ──MQTT :1883──▶ Mosquitto ──▶ backend (Go) ──HTTPS�
 ESP32-C3 (alarm) tetap menerima perintah dari ESP32-S3 lewat Wi-Fi lokal, tidak lewat backend.
 ```
 
-Server berjalan di Mac. ESP32 dan app tersambung ke IP Mac lewat Wi-Fi rumah. Notifikasi tetap sampai ke iPhone di mana saja (juga lewat data seluler), karena Mac yang menghubungi server Apple.
+Server berjalan di Mac. ESP32 dan app tersambung ke nama `beforefire-server.local` lewat Wi-Fi yang sama, jadi server bisa pindah ke Mac lain atau Wi-Fi lain tanpa mengubah app dan board (lihat [Alamat untuk ESP32 dan app](#4-alamat-untuk-esp32-dan-app)). Notifikasi tetap sampai ke iPhone di mana saja (juga lewat data seluler), karena Mac yang menghubungi server Apple.
 
 > Status: backend sudah lengkap dan teruji (lihat [Pengujian](#pengujian)). **Firmware dan app belum diubah.** Bagian [Kontrak untuk firmware](#kontrak-untuk-firmware-esp32-s3) dan [Kontrak untuk app](#kontrak-untuk-app-ios) menjelaskan apa yang nanti perlu ditambahkan di sana.
 
@@ -38,6 +38,10 @@ BeforeFire-Backend/
 ├── deploy/mosquitto/config/   mosquitto.conf dan acl (passwd dibuat oleh script)
 ├── scripts/
 │   ├── mqtt-user.sh           tambah/hapus user MQTT (backend dan tiap alat)
+│   ├── setup-server.sh        siapkan Mac: .env, password acak, user broker, daftar alat
+│   ├── start-server.sh        nyalakan server dan nama beforefire-server.local
+│   ├── stop-server.sh         hentikan server yang dijalankan dengan --background
+│   ├── check-server.sh        cek server lewat nama beforefire-server.local
 │   └── test-integration.sh    tes tanpa Docker (butuh go + mosquitto terpasang)
 ├── secrets/                   tempat AuthKey.p8 dari Apple (tidak ikut Git)
 ├── Dockerfile, docker-compose.yml, .env.example
@@ -61,18 +65,37 @@ Hasil yang benar: semua baris diawali `ok`, lalu `--- PASS: TestBackendWithMosqu
 ### 2. Menyalakan server
 
 ```bash
-cp .env.example .env
-# Buka .env, ganti MQTT_PASSWORD dengan nilai acak (contoh: openssl rand -base64 24)
-
-scripts/mqtt-user.sh init                      # buat user "backend" di broker
-scripts/mqtt-user.sh add DAPUR_A1B2C3 abcd2345 # daftarkan alat: serial dan PoP dari stiker
-docker compose up -d --build
-docker compose logs -f backend                 # tunggu sampai muncul "mqtt connected"
+scripts/setup-server.sh DAPUR_A1B2C3 abcd2345  # sekali per Mac: serial dan PoP dari stiker
+scripts/start-server.sh --build                # nyalakan Docker dan nama beforefire-server.local
 ```
 
-Cek: `curl localhost:8080/healthz` harus menjawab `{"mqttConnected":true}`.
+`setup-server.sh` aman dijalankan berulang kali:
+- Membuat `.env` dari `.env.example` kalau belum ada. `.env` yang sudah ada tidak ditimpa.
+- Mengisi `MQTT_PASSWORD` dengan nilai acak kalau masih kosong atau `change-me`. Sebelum mengubah `.env`, file lama disalin ke `.env.backup`. Password yang sudah diisi tidak diganti.
+- Membuat user `backend` di broker, atau memperbarui password-nya. Alat yang sudah terdaftar tetap ada.
+- Mendaftarkan setiap pasangan serial dan PoP yang diberikan. Untuk beberapa alat: `scripts/setup-server.sh DAPUR_A1B2C3 abcd2345 DAPUR_D4E5F6 wxyz6789`.
 
-Kalau muncul `port is already allocated`, port itu sudah dipakai program lain di Mac. Ganti `HTTP_PORT` (atau `MQTT_PORT`) di `.env`, misalnya `HTTP_PORT=8081`, lalu jalankan `docker compose up -d` lagi. Setelah itu pakai port yang baru di `curl` dan di app.
+Pengaturan APNs di `.env` tetap diisi manual (lihat langkah 5).
+
+Biarkan jendela Terminal itu terbuka selama server dipakai, dan ketik perintah lain di tab baru. Kalau ingin Terminal langsung bisa dipakai lagi, jalankan di latar belakang:
+
+```bash
+scripts/start-server.sh --build --background   # Terminal langsung bebas, boleh ditutup
+scripts/stop-server.sh                         # hapus nama dan matikan container
+```
+
+Di latar belakang, nama tetap aktif walaupun jendela Terminal ditutup, sampai `scripts/stop-server.sh` atau Mac di-restart. Lognya ada di `.server-name.log` (`tail -f .server-name.log`). Log backend bisa dilihat dengan `docker compose logs -f backend` (tunggu sampai muncul `mqtt connected`).
+
+Cek dari Mac mana pun di Wi-Fi yang sama:
+
+```bash
+scripts/check-server.sh               # nama, Bonjour, HTTP, MQTT, dan daftar alat
+scripts/check-server.sh DAPUR_A1B2C3  # juga cek bahwa alat ini online
+```
+
+Setiap baris menampilkan `OK` atau `FAIL` beserta saran perbaikan. Cara manual: `curl beforefire-server.local:8080/healthz` harus menjawab `{"mqttConnected":true}`.
+
+Kalau muncul `port is already allocated`, port itu sudah dipakai program lain di Mac. Ganti `HTTP_PORT` (atau `MQTT_PORT`) di `.env`, misalnya `HTTP_PORT=8081`, lalu jalankan `scripts/start-server.sh` lagi. Setelah itu pakai port yang baru di `curl`, di app (`http://beforefire-server.local:8081`), dan di board (`@M`), karena alamat bawaan app dan board memakai port 8080 dan 1883.
 
 ### 3. Mencoba tanpa ESP32 dan app
 
@@ -109,13 +132,24 @@ Tanpa header `Authorization` atau dengan kunci lain, jawabannya `401 invalid_rea
 
 ### 4. Alamat untuk ESP32 dan app
 
-Cari IP Mac: `ipconfig getifaddr en0` (contoh `192.168.1.10`).
+App dan firmware sudah memakai alamat bawaan berikut, jadi tidak perlu diketik:
 
-- ESP32: `mqtt://192.168.1.10:1883`
-- App: `http://192.168.1.10:8080`
+- ESP32: `mqtt://beforefire-server.local:1883`
+- App: `http://beforefire-server.local:8080`
 
-Supaya alamat itu tidak berubah:
-- Buat *DHCP reservation* untuk Mac di router.
+`scripts/start-server.sh` memberi nama itu ke Mac yang menjalankannya, memakai `dns-sd` bawaan macOS. Nama laptop tidak diubah. Akibatnya:
+
+- **Ganti Mac:** clone repo ini di Mac lain, jalankan `scripts/setup-server.sh <Serial> <PoP>`, lalu `scripts/start-server.sh --build`. App dan board tidak perlu diubah.
+- **Ganti Wi-Fi:** script memindahkan nama ke IP baru dalam beberapa detik. App dan board tersambung lagi sendiri.
+- Nama hanya aktif selama script berjalan. Ctrl+C menghapus nama; container tetap jalan sampai `docker compose down`. Dengan `--background`, nama aktif sampai `scripts/stop-server.sh` atau Mac di-restart.
+- Hanya satu Mac di satu Wi-Fi yang bisa memakai nama itu. Script berhenti dengan pesan kalau nama sudah dipakai Mac lain.
+- Script juga mengumumkan layanan Bonjour `_beforefire._tcp` (port HTTP, dengan TXT `http=` dan `mqtt=`). Cek dengan `dns-sd -B _beforefire._tcp`.
+
+Kalau container sudah jalan (misalnya setelah Docker Desktop dibuka ulang), cukup `scripts/start-server.sh --name-only`.
+
+**Wi-Fi yang memblokir nama `.local`** (sebagian Wi-Fi kampus atau kantor, atau router dengan *AP isolation*): pakai IP Mac sebagai cadangan. Cari dengan `ipconfig getifaddr en0` (contoh `192.168.1.10`), lalu ketik `http://192.168.1.10:8080` di layar Sensor Data app dan `@M mqtt://192.168.1.10:1883` di Serial Monitor board. Alamat ini harus diganti lagi kalau IP Mac berubah.
+
+Supaya server tetap bisa dijangkau:
 - Matikan sleep di System Settings → Energy.
 - Biarkan Docker Desktop menyala. `restart: unless-stopped` membuat container menyala lagi setelah Docker Desktop dibuka ulang.
 
@@ -139,11 +173,17 @@ Untuk uji iPhone, gunakan konfigurasi APNs yang cocok dengan signing app. Buka B
 
 | Perintah | Fungsi |
 |---|---|
+| `scripts/setup-server.sh <Serial> <PoP>` | siapkan Mac (`.env`, password acak, user broker) dan daftarkan alat |
+| `scripts/start-server.sh` | nyalakan server dan nama `beforefire-server.local` (Ctrl+C menghapus nama) |
+| `scripts/check-server.sh [Serial]` | cek server lewat nama, seperti app dan board |
+| `scripts/start-server.sh --build --background` | sama, tapi berjalan di latar belakang sehingga Terminal langsung bebas |
+| `scripts/stop-server.sh` | hentikan server latar belakang: hapus nama dan matikan container (`--keep-docker` hanya menghapus nama) |
+| `scripts/start-server.sh --name-only` | nyalakan nama saja untuk container yang sudah jalan |
 | `docker compose down` | matikan server |
 | `docker compose logs -f backend` | lihat log backend |
 | `docker compose logs -f mosquitto` | lihat log broker |
 | `scripts/mqtt-user.sh remove DAPUR_A1B2C3` | cabut akses satu alat |
-| `docker compose up -d --build` | jalankan ulang setelah kode berubah |
+| `scripts/start-server.sh --build` | jalankan ulang setelah kode berubah |
 
 ## Kontrak MQTT
 
@@ -162,7 +202,7 @@ Semua topic berbentuk `beforefire/<deviceId>/<jenis>`. `deviceId` adalah nama BL
 Belum diterapkan di `A09Final-IoT`. Yang perlu ditambahkan di `Sensor.ino`:
 
 **1. Koneksi**
-- Broker: `mqtt://<IP Mac>:1883`, username = `namaBLE`, password = PoP (prototipe) atau password terpisah di NVS (produksi).
+- Broker: `mqtt://beforefire-server.local:1883` (atau `mqtt://<IP Mac>:1883`), username = `namaBLE`, password = PoP (prototipe) atau password terpisah di NVS (produksi).
 - Tanpa TLS selama server ada di jaringan rumah. Tambahkan TLS sebelum broker bisa diakses dari internet.
 - Will: topic `beforefire/<id>/status`, payload `offline`, QoS 1, retain.
 - Setelah tersambung: publish `online` ke topic yang sama, QoS 1, retain.
@@ -304,7 +344,7 @@ App mengirim `readKey`. Backend menghitung SHA-256-nya dan mencocokkannya dengan
 
 ## Kontrak untuk app (iOS)
 
-Belum diterapkan di `BeforeFire`. Alamat backend: `http://<IP Mac>:8080`.
+Belum diterapkan di `BeforeFire`. Alamat backend: `http://beforefire-server.local:8080` (atau `http://<IP Mac>:8080`).
 
 iOS memblokir `http://` biasa. Tambahkan di Info.plist app:
 - `NSAppTransportSecurity` → `NSAllowsLocalNetworking` = `YES` (izin koneksi ke jaringan lokal tanpa HTTPS).
