@@ -38,7 +38,9 @@ BeforeFire-Backend/
 ├── deploy/mosquitto/config/   mosquitto.conf dan acl (passwd dibuat oleh script)
 ├── scripts/
 │   ├── mqtt-user.sh           tambah/hapus user MQTT (backend dan tiap alat)
+│   ├── setup-server.sh        siapkan Mac: .env, password acak, user broker, daftar alat
 │   ├── start-server.sh        nyalakan server dan nama beforefire-server.local
+│   ├── check-server.sh        cek server lewat nama beforefire-server.local
 │   └── test-integration.sh    tes tanpa Docker (butuh go + mosquitto terpasang)
 ├── secrets/                   tempat AuthKey.p8 dari Apple (tidak ikut Git)
 ├── Dockerfile, docker-compose.yml, .env.example
@@ -62,17 +64,28 @@ Hasil yang benar: semua baris diawali `ok`, lalu `--- PASS: TestBackendWithMosqu
 ### 2. Menyalakan server
 
 ```bash
-cp .env.example .env
-# Buka .env, ganti MQTT_PASSWORD dengan nilai acak (contoh: openssl rand -base64 24)
-
-scripts/mqtt-user.sh init                      # buat user "backend" di broker
-scripts/mqtt-user.sh add DAPUR_A1B2C3 abcd2345 # daftarkan alat: serial dan PoP dari stiker
+scripts/setup-server.sh DAPUR_A1B2C3 abcd2345  # sekali per Mac: serial dan PoP dari stiker
 scripts/start-server.sh --build                # nyalakan Docker dan nama beforefire-server.local
 ```
 
+`setup-server.sh` aman dijalankan berulang kali:
+- Membuat `.env` dari `.env.example` kalau belum ada. `.env` yang sudah ada tidak ditimpa.
+- Mengisi `MQTT_PASSWORD` dengan nilai acak kalau masih kosong atau `change-me`. Sebelum mengubah `.env`, file lama disalin ke `.env.backup`. Password yang sudah diisi tidak diganti.
+- Membuat user `backend` di broker, atau memperbarui password-nya. Alat yang sudah terdaftar tetap ada.
+- Mendaftarkan setiap pasangan serial dan PoP yang diberikan. Untuk beberapa alat: `scripts/setup-server.sh DAPUR_A1B2C3 abcd2345 DAPUR_D4E5F6 wxyz6789`.
+
+Pengaturan APNs di `.env` tetap diisi manual (lihat langkah 5).
+
 Biarkan jendela Terminal itu terbuka selama server dipakai. Log backend bisa dilihat di jendela lain dengan `docker compose logs -f backend` (tunggu sampai muncul `mqtt connected`).
 
-Cek: `curl beforefire-server.local:8080/healthz` harus menjawab `{"mqttConnected":true}`.
+Cek dari Mac mana pun di Wi-Fi yang sama:
+
+```bash
+scripts/check-server.sh               # nama, Bonjour, HTTP, MQTT, dan daftar alat
+scripts/check-server.sh DAPUR_A1B2C3  # juga cek bahwa alat ini online
+```
+
+Setiap baris menampilkan `OK` atau `FAIL` beserta saran perbaikan. Cara manual: `curl beforefire-server.local:8080/healthz` harus menjawab `{"mqttConnected":true}`.
 
 Kalau muncul `port is already allocated`, port itu sudah dipakai program lain di Mac. Ganti `HTTP_PORT` (atau `MQTT_PORT`) di `.env`, misalnya `HTTP_PORT=8081`, lalu jalankan `scripts/start-server.sh` lagi. Setelah itu pakai port yang baru di `curl`, di app (`http://beforefire-server.local:8081`), dan di board (`@M`), karena alamat bawaan app dan board memakai port 8080 dan 1883.
 
@@ -118,7 +131,7 @@ App dan firmware sudah memakai alamat bawaan berikut, jadi tidak perlu diketik:
 
 `scripts/start-server.sh` memberi nama itu ke Mac yang menjalankannya, memakai `dns-sd` bawaan macOS. Nama laptop tidak diubah. Akibatnya:
 
-- **Ganti Mac:** clone repo ini di Mac lain, isi `.env`, lalu jalankan script. App dan board tidak perlu diubah.
+- **Ganti Mac:** clone repo ini di Mac lain, jalankan `scripts/setup-server.sh <Serial> <PoP>`, lalu `scripts/start-server.sh --build`. App dan board tidak perlu diubah.
 - **Ganti Wi-Fi:** script memindahkan nama ke IP baru dalam beberapa detik. App dan board tersambung lagi sendiri.
 - Nama hanya aktif selama script berjalan. Ctrl+C menghapus nama; container tetap jalan sampai `docker compose down`.
 - Hanya satu Mac di satu Wi-Fi yang bisa memakai nama itu. Script berhenti dengan pesan kalau nama sudah dipakai Mac lain.
@@ -152,7 +165,9 @@ Untuk uji iPhone, gunakan konfigurasi APNs yang cocok dengan signing app. Buka B
 
 | Perintah | Fungsi |
 |---|---|
+| `scripts/setup-server.sh <Serial> <PoP>` | siapkan Mac (`.env`, password acak, user broker) dan daftarkan alat |
 | `scripts/start-server.sh` | nyalakan server dan nama `beforefire-server.local` (Ctrl+C menghapus nama) |
+| `scripts/check-server.sh [Serial]` | cek server lewat nama, seperti app dan board |
 | `scripts/start-server.sh --name-only` | nyalakan nama saja untuk container yang sudah jalan |
 | `docker compose down` | matikan server |
 | `docker compose logs -f backend` | lihat log backend |
