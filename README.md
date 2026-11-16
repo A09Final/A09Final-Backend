@@ -40,6 +40,7 @@ BeforeFire-Backend/
 │   ├── mqtt-user.sh           tambah/hapus user MQTT (backend dan tiap alat)
 │   ├── setup-server.sh        siapkan Mac: .env, password acak, user broker, daftar alat
 │   ├── start-server.sh        nyalakan server dan nama beforefire-server.local
+│   ├── stop-server.sh         hentikan server yang dijalankan dengan --background
 │   ├── check-server.sh        cek server lewat nama beforefire-server.local
 │   └── test-integration.sh    tes tanpa Docker (butuh go + mosquitto terpasang)
 ├── secrets/                   tempat AuthKey.p8 dari Apple (tidak ikut Git)
@@ -76,7 +77,14 @@ scripts/start-server.sh --build                # nyalakan Docker dan nama before
 
 Pengaturan APNs di `.env` tetap diisi manual (lihat langkah 5).
 
-Biarkan jendela Terminal itu terbuka selama server dipakai. Log backend bisa dilihat di jendela lain dengan `docker compose logs -f backend` (tunggu sampai muncul `mqtt connected`).
+Biarkan jendela Terminal itu terbuka selama server dipakai, dan ketik perintah lain di tab baru. Kalau ingin Terminal langsung bisa dipakai lagi, jalankan di latar belakang:
+
+```bash
+scripts/start-server.sh --build --background   # Terminal langsung bebas, boleh ditutup
+scripts/stop-server.sh                         # hapus nama dan matikan container
+```
+
+Di latar belakang, nama tetap aktif walaupun jendela Terminal ditutup, sampai `scripts/stop-server.sh` atau Mac di-restart. Lognya ada di `.server-name.log` (`tail -f .server-name.log`). Log backend bisa dilihat dengan `docker compose logs -f backend` (tunggu sampai muncul `mqtt connected`).
 
 Cek dari Mac mana pun di Wi-Fi yang sama:
 
@@ -133,7 +141,7 @@ App dan firmware sudah memakai alamat bawaan berikut, jadi tidak perlu diketik:
 
 - **Ganti Mac:** clone repo ini di Mac lain, jalankan `scripts/setup-server.sh <Serial> <PoP>`, lalu `scripts/start-server.sh --build`. App dan board tidak perlu diubah.
 - **Ganti Wi-Fi:** script memindahkan nama ke IP baru dalam beberapa detik. App dan board tersambung lagi sendiri.
-- Nama hanya aktif selama script berjalan. Ctrl+C menghapus nama; container tetap jalan sampai `docker compose down`.
+- Nama hanya aktif selama script berjalan. Ctrl+C menghapus nama; container tetap jalan sampai `docker compose down`. Dengan `--background`, nama aktif sampai `scripts/stop-server.sh` atau Mac di-restart.
 - Hanya satu Mac di satu Wi-Fi yang bisa memakai nama itu. Script berhenti dengan pesan kalau nama sudah dipakai Mac lain.
 - Script juga mengumumkan layanan Bonjour `_beforefire._tcp` (port HTTP, dengan TXT `http=` dan `mqtt=`). Cek dengan `dns-sd -B _beforefire._tcp`.
 
@@ -168,6 +176,8 @@ Untuk uji iPhone, gunakan konfigurasi APNs yang cocok dengan signing app. Buka B
 | `scripts/setup-server.sh <Serial> <PoP>` | siapkan Mac (`.env`, password acak, user broker) dan daftarkan alat |
 | `scripts/start-server.sh` | nyalakan server dan nama `beforefire-server.local` (Ctrl+C menghapus nama) |
 | `scripts/check-server.sh [Serial]` | cek server lewat nama, seperti app dan board |
+| `scripts/start-server.sh --build --background` | sama, tapi berjalan di latar belakang sehingga Terminal langsung bebas |
+| `scripts/stop-server.sh` | hentikan server latar belakang: hapus nama dan matikan container (`--keep-docker` hanya menghapus nama) |
 | `scripts/start-server.sh --name-only` | nyalakan nama saja untuk container yang sudah jalan |
 | `docker compose down` | matikan server |
 | `docker compose logs -f backend` | lihat log backend |
