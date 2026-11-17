@@ -39,6 +39,9 @@ const (
 	soundName     = "default"
 )
 
+// BeforeFire includes this file in its app bundle for Critical Alerts.
+const criticalAlarmSoundName = "BeforeFireCriticalSiren.caf"
+
 // content is the visible part of a notification for one condition.
 type content struct {
 	title             string
@@ -122,7 +125,7 @@ func buildPayload(deviceID string, report Report, alarmInterruptionLevel string)
 	}
 	if visible.hasSound {
 		if visible.interruptionLevel == InterruptionCritical {
-			notification.APS.Sound = criticalSound{Critical: 1, Name: soundName, Volume: 1.0}
+			notification.APS.Sound = criticalSound{Critical: 1, Name: criticalAlarmSoundName, Volume: 1.0}
 		} else {
 			notification.APS.Sound = soundName
 		}
