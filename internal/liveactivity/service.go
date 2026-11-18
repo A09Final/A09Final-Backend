@@ -36,16 +36,23 @@ var (
 )
 
 type Registration struct {
-	InstallationID string `json:"installationId"`
-	StartToken     string `json:"startToken,omitempty"`
-	EventID        string `json:"eventId,omitempty"`
-	UpdateToken    string `json:"updateToken,omitempty"`
-	Remove         bool   `json:"remove,omitempty"`
+	InstallationID  string `json:"installationId"`
+	StartToken      string `json:"startToken,omitempty"`
+	EventID         string `json:"eventId,omitempty"`
+	UpdateToken     string `json:"updateToken,omitempty"`
+	Remove          bool   `json:"remove,omitempty"`
+	PushToken       string `json:"pushToken,omitempty"`
+	SnoozedUntil    *int64 `json:"snoozedUntil,omitempty"`
+	SnoozeChangedAt int64  `json:"snoozeChangedAt,omitempty"`
 }
 
 type installation struct {
-	StartToken string            `json:"startToken,omitempty"`
-	Updates    map[string]string `json:"updates,omitempty"`
+	StartToken      string            `json:"startToken,omitempty"`
+	PushToken       string            `json:"pushToken,omitempty"`
+	SnoozedUntil    int64             `json:"snoozedUntil,omitempty"`
+	SnoozeChangedAt int64             `json:"snoozeChangedAt,omitempty"`
+	NextReminderAt  int64             `json:"nextReminderAt,omitempty"`
+	Updates         map[string]string `json:"updates,omitempty"`
 }
 
 type sensorState struct {
@@ -54,6 +61,8 @@ type sensorState struct {
 	AlarmAt         int64                   `json:"alarmAt,omitempty"`
 	StartTimestamp  int64                   `json:"startTimestamp,omitempty"`
 	Recovered       bool                    `json:"recovered,omitempty"`
+	ReminderReport  *alert.Report           `json:"reminderReport,omitempty"`
+	NextReminderAt  int64                   `json:"nextReminderAt,omitempty"`
 	RecoveredEvents []string                `json:"recoveredEvents,omitempty"`
 }
 
@@ -102,18 +111,24 @@ func (s *Service) Register(deviceID string, request Registration) error {
 	if !installationID.MatchString(request.InstallationID) {
 		return ErrRegistration
 	}
+	if request.SnoozedUntil != nil {
+		return s.registerSnooze(deviceID, request)
+	}
+	if request.SnoozeChangedAt != 0 || (request.PushToken != "" && !alert.IsValidPushToken(request.PushToken)) {
+		return ErrRegistration
+	}
 	if request.Remove {
-		if request.StartToken != "" || request.EventID != "" || request.UpdateToken != "" {
+		if request.StartToken != "" || request.EventID != "" || request.UpdateToken != "" || request.PushToken != "" {
 			return ErrRegistration
 		}
 		s.mu.Lock()
 		defer s.mu.Unlock()
 		state := s.sensors[deviceID]
 		phone, exists := state.Installations[request.InstallationID]
-		if !exists || phone.StartToken == "" {
+		if !exists {
 			return nil
 		}
-		phone.StartToken = ""
+		phone.StartToken, phone.PushToken = "", ""
 		state.Installations = clone(state.Installations)
 		if len(phone.Updates) == 0 {
 			delete(state.Installations, request.InstallationID)
@@ -124,7 +139,8 @@ func (s *Service) Register(deviceID string, request Registration) error {
 	}
 	start := request.StartToken != "" && validToken(request.StartToken) && request.EventID == "" && request.UpdateToken == ""
 	update := request.StartToken == "" && eventID.MatchString(request.EventID) && validToken(request.UpdateToken)
-	if !start && !update {
+	push := request.PushToken != "" && request.StartToken == "" && request.EventID == "" && request.UpdateToken == ""
+	if !start && !update && !push {
 		return ErrRegistration
 	}
 
@@ -138,16 +154,27 @@ func (s *Service) Register(deviceID string, request Registration) error {
 		return ErrRegistration
 	}
 	if start {
-		if current.StartToken == request.StartToken {
+		if current.StartToken == request.StartToken && (request.PushToken == "" || current.PushToken == request.PushToken) {
 			s.mu.Unlock()
 			return nil
 		}
 		current.StartToken = request.StartToken
-	} else {
+	} else if update {
 		current.Updates = clone(current.Updates)
 		current.Updates[request.EventID] = request.UpdateToken
 	}
+	if request.PushToken != "" {
+		current.PushToken = request.PushToken
+	}
 	state.Installations = clone(state.Installations)
+	if request.PushToken != "" {
+		for id, phone := range state.Installations {
+			if id != request.InstallationID && phone.PushToken == request.PushToken {
+				phone.PushToken = ""
+				state.Installations[id] = phone
+			}
+		}
+	}
 	state.Installations[request.InstallationID] = current
 	err := s.save(deviceID, state)
 	s.mu.Unlock()
@@ -172,6 +199,16 @@ func (s *Service) Alarm(ctx context.Context, deviceID string, report alert.Repor
 	}
 	state.EventID, state.AlarmAt, state.Recovered = report.AlertID, report.IssuedAt, false
 	state.StartTimestamp = time.Now().Unix()
+	// Registered installations provide the current phone tokens.
+	report.PushTokens = nil
+	state.ReminderReport = &report
+	state.NextReminderAt = time.Unix(state.StartTimestamp, 0).Add(reminderInterval).Unix()
+	state.Installations = clone(state.Installations)
+	for id, phone := range state.Installations {
+		phone.SnoozedUntil, phone.SnoozeChangedAt = 0, 0
+		phone.NextReminderAt = state.NextReminderAt
+		state.Installations[id] = phone
+	}
 	err := s.save(deviceID, state)
 	s.mu.Unlock()
 	if err != nil {
@@ -276,7 +313,7 @@ func (s *Service) deliverEnd(deviceID, installationID, eventID, token string, st
 	phone.Updates = clone(phone.Updates)
 	delete(phone.Updates, eventID)
 	state.Installations = clone(state.Installations)
-	if phone.StartToken == "" && len(phone.Updates) == 0 {
+	if phone.StartToken == "" && phone.PushToken == "" && len(phone.Updates) == 0 {
 		delete(state.Installations, installationID)
 	} else {
 		state.Installations[installationID] = phone

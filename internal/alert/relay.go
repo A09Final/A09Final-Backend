@@ -27,6 +27,7 @@ type RelayConfig struct {
 	AlarmInterruptionLevel string
 	OnUnregisteredToken    UnregisteredTokenHandler
 	OnAlarm                func(context.Context, string, Report)
+	SuppressAlarmToken     func(string, string) bool
 	Logger                 *slog.Logger
 	Now                    func() time.Time
 }
@@ -95,6 +96,9 @@ func (r *Relay) Handle(ctx context.Context, deviceID string, payload []byte) (De
 		}()
 	}
 	for _, token := range report.PushTokens {
+		if report.Condition == ConditionAlarm && r.config.SuppressAlarmToken != nil && r.config.SuppressAlarmToken(deviceID, token) {
+			continue
+		}
 		group.Add(1)
 		go func() {
 			defer group.Done()

@@ -133,3 +133,12 @@ func buildPayload(deviceID string, report Report, alarmInterruptionLevel string)
 	encoded, err := json.Marshal(notification)
 	return encoded, visible.priority, err
 }
+
+// AlarmReminderPayload reuses the alarm text and the full-volume critical siren.
+func AlarmReminderPayload(deviceID string, report Report) ([]byte, error) {
+	// The original readings may no longer describe the kitchen.
+	report.Readings = Readings{}
+	report.Condition = ConditionAlarm
+	encoded, _, err := buildPayload(deviceID, report, InterruptionCritical)
+	return encoded, err
+}
