@@ -90,12 +90,12 @@ func TestBuildPayloadForAlarm(t *testing.T) {
 	}
 }
 
-func TestBuildPayloadCriticalUsesCriticalSound(t *testing.T) {
+func TestBuildPayloadCriticalUsesBeforeFireSiren(t *testing.T) {
 	encoded, _, err := buildPayload(testDeviceID, Report{AlertID: "a", Condition: ConditionAlarm}, InterruptionCritical)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(encoded), `"sound":{"critical":1,"name":"default","volume":1}`) {
+	if !strings.Contains(string(encoded), `"sound":{"critical":1,"name":"BeforeFireCriticalSiren.caf","volume":1}`) {
 		t.Fatalf("payload = %s", encoded)
 	}
 }
