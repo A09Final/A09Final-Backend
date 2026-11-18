@@ -169,6 +169,20 @@ Docker Compose menyimpan pendaftaran ActivityKit dan sesi Alarm di volume `live-
 
 Untuk uji iPhone, gunakan konfigurasi APNs yang cocok dengan signing app. Buka BeforeFire sekali, izinkan notifikasi dan Live Activities, lalu tautkan sensor. Pakai kejadian uji. Cek bahwa push Alarm memulai Live Activity, ketukan membuka halaman Alarm, dan laporan Normal yang valid serta terbaru mengakhiri aktivitas. Warning 1, Warning 2, data kedaluwarsa, dan data sensor yang hilang mempertahankan sesi Alarm. Uji saat app di latar belakang dan saat ditutup dari App Switcher.
 
+### Repeated Critical Alerts during Alarm
+
+Set `ALARM_INTERRUPTION_LEVEL=critical`. Keep `LIVE_ACTIVITY_STATE_FILE` on persistent storage. Install the updated app and open it once after linking the sensor. The app registers its APNs token with its installation ID. The existing read key protects this request. Older app versions still receive the initial alert. They do not register for repeated alerts.
+
+The server requests one Critical Alert every 30 seconds during an unresolved Alarm. Each request uses `BeforeFireCriticalSiren.caf` at volume `1.0`. The sound lasts 28.8 seconds. APNs delivery is best effort. The interval does not guarantee uninterrupted sound. The user can stop the current system sound with iPhone controls. A later alert can sound again.
+
+A recent, complete Normal measurement after the Alarm stops the reminders and ends the Live Activity. Warning 1, Warning 2, stale readings, and connection loss keep the Alarm active. The server does not start another Live Activity for each reminder. It keeps the original Alarm event ID. A restart resumes the schedule without sending missed reminders in a burst.
+
+The app sends snooze changes to `PUT /v1/devices/{deviceId}/live-activity-token`. A snooze body contains `installationId`, optional `eventId`, `snoozedUntil` (Unix seconds; `0` resumes), and `snoozeChangedAt` (Unix milliseconds). A newer change replaces an older change for that iPhone only. A snooze can last up to one hour. The server checks each phone deadline every second. It requests an alert when snooze ends, then repeats every 30 seconds from that request. It does not wait for another phone's schedule. APNs can still delay delivery. The app retries a pending change when it opens again. If the request cannot reach the server, the server can continue to send reminders. Requests already sent to APNs cannot be recalled.
+
+Removing the installation clears its reminder token. APNs token rejection also stops reminders to that token. This feature does not change the physical alarm or its controls.
+
+Verification: Test at least two reminder cycles on a locked iPhone. Snooze from the Live Activity, wait past the deadline, then send a fresh valid Normal reading. Check that reminders resume after snooze and stop after Normal. Check that a second linked iPhone keeps its own snooze state.
+
 ### Perintah lain
 
 | Perintah | Fungsi |

@@ -28,6 +28,9 @@ func TestLiveActivityRegistrationRequiresTheSensorReadKey(t *testing.T) {
 		{"bad-key", registration, http.StatusUnauthorized},
 		{"good-key", registration + "{}", http.StatusBadRequest},
 		{"good-key", registration, http.StatusNoContent},
+		{"good-key", `{"installationId":"01234567-89ab-cdef-0123-456789abcdef","pushToken":"` + strings.Repeat("b", 64) + `"}`, http.StatusNoContent},
+		{"", `{"installationId":"01234567-89ab-cdef-0123-456789abcdef","pushToken":"` + strings.Repeat("b", 64) + `"}`, http.StatusUnauthorized},
+		{"good-key", `{"installationId":"01234567-89ab-cdef-0123-456789abcdef","snoozedUntil":0,"snoozeChangedAt":1}`, http.StatusBadRequest},
 		{"good-key", `{"installationId":"01234567-89ab-cdef-0123-456789abcdef","remove":true}`, http.StatusNoContent},
 	} {
 		request := httptest.NewRequest(http.MethodPut, path, strings.NewReader(test.body))

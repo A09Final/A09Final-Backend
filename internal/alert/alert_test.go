@@ -209,3 +209,23 @@ func jsonNumber(value int64) string {
 	encoded, _ := json.Marshal(value)
 	return string(encoded)
 }
+
+func TestSnoozeFiltersAlarmOnlyAndOnlyForOnePhone(t *testing.T) {
+	for _, condition := range []Condition{ConditionAlarm, ConditionWarning2} {
+		sender := &fakeSender{}
+		relay := NewRelay(RelayConfig{
+			Sender: sender, Deduplicator: NewDeduplicator(time.Hour), Expiry: time.Minute,
+			Now:                func() time.Time { return testNow },
+			SuppressAlarmToken: func(deviceID, token string) bool { return deviceID == testDeviceID && token == tokenA },
+		})
+		body, _ := json.Marshal(Report{AlertID: "snooze-test", Condition: condition, PushTokens: []string{tokenA, tokenB}})
+		result, err := relay.Handle(context.Background(), testDeviceID, body)
+		expected := 2
+		if condition == ConditionAlarm {
+			expected = 1
+		}
+		if err != nil || result.Sent != expected {
+			t.Fatalf("condition %s: result=%+v, err=%v", condition, result, err)
+		}
+	}
+}

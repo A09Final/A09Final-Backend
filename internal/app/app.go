@@ -102,6 +102,10 @@ func New(cfg config.Config, sender alert.Sender, logger *slog.Logger) *App {
 			}
 		}
 	}
+	var suppressAlarmToken func(string, string) bool
+	if application.liveActivities != nil {
+		suppressAlarmToken = application.liveActivities.SuppressesAlarmToken
+	}
 	application.relay = alert.NewRelay(alert.RelayConfig{
 		Sender:                 sender,
 		Deduplicator:           alert.NewDeduplicator(cfg.AlertDedupeWindow),
@@ -109,6 +113,7 @@ func New(cfg config.Config, sender alert.Sender, logger *slog.Logger) *App {
 		AlarmInterruptionLevel: cfg.AlarmInterruptionLevel,
 		OnUnregisteredToken:    application.commands.RemovePushToken,
 		OnAlarm:                onAlarm,
+		SuppressAlarmToken:     suppressAlarmToken,
 		Logger:                 logger,
 	})
 
@@ -133,6 +138,11 @@ func New(cfg config.Config, sender alert.Sender, logger *slog.Logger) *App {
 
 // Run starts MQTT and HTTP and stops both when ctx ends.
 func (a *App) Run(ctx context.Context) error {
+	ctx, stop := context.WithCancel(ctx)
+	defer stop()
+	if a.liveActivities != nil && a.config.AlarmInterruptionLevel == alert.InterruptionCritical {
+		go a.liveActivities.RunReminders(ctx)
+	}
 	mqttStopped := make(chan struct{})
 	go func() {
 		defer close(mqttStopped)
