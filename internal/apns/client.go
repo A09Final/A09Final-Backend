@@ -62,6 +62,14 @@ func (e *Error) IsUnregistered() bool {
 	return e.StatusCode == http.StatusGone
 }
 
+// IsBadDeviceToken reports a token that APNs does not accept in this
+// environment. A token from an Xcode build is valid only in sandbox, and a
+// TestFlight token only in production. The caller decides if the token is old
+// or if APNS_ENVIRONMENT is wrong.
+func (e *Error) IsBadDeviceToken() bool {
+	return e.StatusCode == http.StatusBadRequest && e.Reason == "BadDeviceToken"
+}
+
 // Config holds the values from the Apple Developer account.
 type Config struct {
 	BaseURL     string

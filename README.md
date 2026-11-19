@@ -303,7 +303,7 @@ Kalau `stoveTemperatureC` ada, isi notifikasi ditambah "Stove: 232 °C." (kecual
 
 Aturan pemeriksaan:
 - `origin: "app"`: **wajib** periksa tanda tangan (lihat di bawah), `issuedAt` paling jauh ±5 menit dari jam alat, dan `requestId` belum pernah dipakai (simpan sekitar 16 ID terakhir).
-- `origin: "backend"`: tanpa tanda tangan, **hanya** boleh untuk `unregister_push_token`. Backend mengirimnya saat APNs menjawab token sudah tidak terdaftar (HTTP 410). Hanya user `backend` yang boleh publish ke topic `cmd` (ACL).
+- `origin: "backend"`: tanpa tanda tangan, **hanya** boleh untuk `unregister_push_token`. Backend mengirimnya saat APNs menjawab token sudah tidak terdaftar (HTTP 410), dan saat APNs menolak token dengan `BadDeviceToken` sedangkan token lain dari alert yang sama terkirim. Contohnya token dari build Xcode (sandbox) saat backend memakai `production` untuk TestFlight. Kalau semua token ditolak `BadDeviceToken`, kemungkinan `APNS_ENVIRONMENT` salah, jadi tidak ada token yang dihapus. Hanya user `backend` yang boleh publish ke topic `cmd` (ACL).
 
 **5. Menjawab** di `beforefire/<id>/ack`:
 

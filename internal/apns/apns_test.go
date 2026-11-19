@@ -213,6 +213,22 @@ func TestSendDoesNotTreatBadDeviceTokenAsUnregistered(t *testing.T) {
 	if !errors.As(err, &apnsErr) || apnsErr.IsUnregistered() {
 		t.Fatalf("err = %v; BadDeviceToken must not remove tokens", err)
 	}
+	// The alert relay decides about BadDeviceToken, because a wrong APNS_ENVIRONMENT gives the same answer.
+	if !apnsErr.IsBadDeviceToken() {
+		t.Fatalf("err = %v; want IsBadDeviceToken", err)
+	}
+}
+
+func TestOnlyBadDeviceTokenIsABadDeviceToken(t *testing.T) {
+	for _, apnsErr := range []*Error{
+		{StatusCode: http.StatusBadRequest, Reason: "DeviceTokenNotForTopic"},
+		{StatusCode: http.StatusGone, Reason: "Unregistered"},
+		{StatusCode: http.StatusForbidden, Reason: "BadDeviceToken"},
+	} {
+		if apnsErr.IsBadDeviceToken() {
+			t.Fatalf("%v must not be a BadDeviceToken", apnsErr)
+		}
+	}
 }
 
 func TestSendRetriesServerErrors(t *testing.T) {
