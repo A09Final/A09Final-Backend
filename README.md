@@ -523,3 +523,10 @@ APNs bodies use at most two short text lines. They do not append sensor temperat
 - Dangerous: `Check the stove NOW.` / `Turn it off if safe.`
 - Alarm: `Turn stove off NOW if safe.` / `If not, call someone nearby.`
 - Normal: `Readings are back to normal.`
+
+
+### Live Activity recovery delivery
+
+The app sends per-activity update tokens in finite background time. Failed registrations stay in the app Keychain and retry on the next registration or lifecycle refresh. Sensor alarms wait for a server-started activity, so they do not create a pushless local fallback that the backend cannot end. Explicit developer previews remain local.
+
+After a fresh, complete Normal report confirms recovery, the backend retries failed `end` requests every five seconds. A late update token still triggers an end for its recovered event. Warning, stale telemetry, and missing sensors do not confirm recovery. Check for an accepted update-token registration and an APNs `end`; a successful `start` alone does not verify recovery.

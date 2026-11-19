@@ -150,6 +150,9 @@ func New(cfg config.Config, sender alert.Sender, logger *slog.Logger) *App {
 func (a *App) Run(ctx context.Context) error {
 	ctx, stop := context.WithCancel(ctx)
 	defer stop()
+	if a.liveActivities != nil {
+		go a.liveActivities.RunRecovery(ctx)
+	}
 	if a.widgetPush != nil {
 		go a.runWidgetRefreshes(ctx)
 	}

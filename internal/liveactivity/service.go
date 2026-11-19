@@ -76,6 +76,9 @@ type Service struct {
 }
 
 func Open(file string, sender alert.Sender, logger *slog.Logger) (*Service, error) {
+	if logger == nil {
+		logger = slog.Default()
+	}
 	s := &Service{file: file, sender: sender, logger: logger, sensors: make(map[string]sensorState), ending: make(map[string]bool)}
 	if file == "" {
 		return s, nil
