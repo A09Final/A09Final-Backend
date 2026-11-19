@@ -76,7 +76,7 @@ func TestBuildPayloadForAlarm(t *testing.T) {
 	}
 	aps, app := decoded["aps"], decoded["beforefire"]
 	alertBody := aps["alert"].(map[string]any)
-	if alertBody["title"] != titleAlarm || alertBody["body"] != bodyAlarm+" Stove: 232 °C." {
+	if alertBody["title"] != titleAlarm || alertBody["body"] != bodyAlarm {
 		t.Errorf("alert = %v", alertBody)
 	}
 	if aps["sound"] != "default" || aps["interruption-level"] != "time-sensitive" || aps["thread-id"] != testDeviceID {
@@ -293,5 +293,61 @@ func TestSnoozeFiltersAlarmOnlyAndOnlyForOnePhone(t *testing.T) {
 		if err != nil || result.Sent != expected {
 			t.Fatalf("condition %s: result=%+v, err=%v", condition, result, err)
 		}
+	}
+}
+
+func TestWarningsUseShortCriticalSystemSound(t *testing.T) {
+	for _, condition := range []Condition{ConditionWarning1, ConditionWarning2} {
+		encoded, priority, err := buildPayload(testDeviceID, Report{AlertID: "warning", Condition: condition}, InterruptionCritical)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var body struct {
+			APS struct {
+				InterruptionLevel string        `json:"interruption-level"`
+				Sound             criticalSound `json:"sound"`
+			}
+		}
+		if err := json.Unmarshal(encoded, &body); err != nil {
+			t.Fatal(err)
+		}
+		if body.APS.InterruptionLevel != InterruptionCritical || body.APS.Sound.Name != "default" || body.APS.Sound.Critical != 1 || body.APS.Sound.Volume != 1 || priority != 10 {
+			t.Fatalf("incorrect critical warning: %s", encoded)
+		}
+	}
+}
+
+func TestNotificationCopyStaysWithinTwoShortLines(t *testing.T) {
+	stove := 280.0
+	for _, condition := range []Condition{ConditionNormal, ConditionWarning1, ConditionWarning2, ConditionAlarm} {
+		encoded, _, err := buildPayload(testDeviceID, Report{AlertID: "copy", Condition: condition, Readings: Readings{StoveTemperatureC: &stove}}, InterruptionCritical)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var body payload
+		if err = json.Unmarshal(encoded, &body); err != nil {
+			t.Fatal(err)
+		}
+		lines := strings.Split(body.APS.Alert.Body, "\n")
+		if len(lines) > 2 {
+			t.Fatalf("too many lines for %s", condition)
+		}
+		for _, line := range lines {
+			if len([]rune(line)) > 34 {
+				t.Fatalf("line too long for %s: %q", condition, line)
+			}
+		}
+		if strings.Contains(body.APS.Alert.Body, "280") {
+			t.Fatal("sensor values must not lengthen the CTA")
+		}
+	}
+	reminder, err := AlarmReminderPayload(testDeviceID, Report{AlertID: "alarm", Condition: ConditionAlarm})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decoded payload
+	_ = json.Unmarshal(reminder, &decoded)
+	if decoded.APS.Alert.Body != AlarmNotificationBody {
+		t.Fatal("reminder copy differs from initial alarm")
 	}
 }

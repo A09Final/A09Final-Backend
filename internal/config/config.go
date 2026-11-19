@@ -42,6 +42,7 @@ type Config struct {
 
 	TelemetryStaleAfter   time.Duration
 	LiveActivityStateFile string
+	WidgetPushStateFile   string
 
 	LogLevel string
 }
@@ -94,6 +95,7 @@ func Load() (Config, error) {
 
 		TelemetryStaleAfter:   reader.duration("TELEMETRY_STALE_AFTER", defaultTelemetryStaleAfter),
 		LiveActivityStateFile: reader.text("LIVE_ACTIVITY_STATE_FILE", ""),
+		WidgetPushStateFile:   reader.text("WIDGET_PUSH_STATE_FILE", "data/widget-push.json"),
 
 		LogLevel: strings.ToLower(reader.text("LOG_LEVEL", defaultLogLevel)),
 	}

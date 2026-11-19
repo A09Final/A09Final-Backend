@@ -76,6 +76,9 @@ type Service struct {
 }
 
 func Open(file string, sender alert.Sender, logger *slog.Logger) (*Service, error) {
+	if logger == nil {
+		logger = slog.Default()
+	}
 	s := &Service{file: file, sender: sender, logger: logger, sensors: make(map[string]sensorState), ending: make(map[string]bool)}
 	if file == "" {
 		return s, nil
@@ -403,7 +406,7 @@ func startPayload(deviceID, eventID string, alarmAt, now int64) ([]byte, error) 
 	return json.Marshal(map[string]activityAPS{"aps": {
 		Timestamp: now, Event: "start", ContentState: activityState{PushEventID: eventID},
 		AttributesType: "AlarmActivityAttributes", Attributes: &activityAttributes{PreviewID: uuid, SensorDeviceID: deviceID, RemoteEventID: eventID, AlarmIssuedAt: alarmAt},
-		InputPushToken: 1, Alert: map[string]string{"title": "Stove alarm", "body": "Turn off the stove now if you can safely reach it."},
+		InputPushToken: 1, Alert: map[string]string{"title": "Stove alarm", "body": alert.AlarmNotificationBody},
 	}})
 }
 

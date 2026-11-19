@@ -18,6 +18,7 @@ import (
 	"github.com/dericknorlan/beforefire-backend/internal/liveactivity"
 	"github.com/dericknorlan/beforefire-backend/internal/mqtt"
 	"github.com/dericknorlan/beforefire-backend/internal/telemetry"
+	"github.com/dericknorlan/beforefire-backend/internal/widgetpush"
 )
 
 const (
@@ -38,6 +39,7 @@ type App struct {
 	statuses       *device.StatusTracker
 	readings       *telemetry.Store
 	liveActivities *liveactivity.Service
+	widgetPush     *widgetpush.Service
 	server         *http.Server
 }
 
@@ -117,6 +119,13 @@ func New(cfg config.Config, sender alert.Sender, logger *slog.Logger) *App {
 		Logger:                 logger,
 	})
 
+	widgets, widgetErr := widgetpush.Open(cfg.WidgetPushStateFile, sender, logger)
+	if widgetErr != nil {
+		logger.Error("widget push store unavailable", "error", widgetErr)
+	} else {
+		application.widgetPush = widgets
+	}
+
 	application.server = &http.Server{
 		Addr: cfg.HTTPAddress,
 		Handler: httpapi.NewHandler(httpapi.Dependencies{
@@ -125,6 +134,7 @@ func New(cfg config.Config, sender alert.Sender, logger *slog.Logger) *App {
 			Devices:             application.statuses,
 			Readings:            application.readings,
 			LiveActivities:      application.liveActivities,
+			WidgetPush:          application.widgetPush,
 			IsMQTTConnected:     application.mqtt.Connected,
 			TelemetryStaleAfter: cfg.TelemetryStaleAfter,
 			Logger:              logger,
@@ -140,6 +150,12 @@ func New(cfg config.Config, sender alert.Sender, logger *slog.Logger) *App {
 func (a *App) Run(ctx context.Context) error {
 	ctx, stop := context.WithCancel(ctx)
 	defer stop()
+	if a.liveActivities != nil {
+		go a.liveActivities.RunRecovery(ctx)
+	}
+	if a.widgetPush != nil {
+		go a.runWidgetRefreshes(ctx)
+	}
 	if a.liveActivities != nil && a.config.AlarmInterruptionLevel == alert.InterruptionCritical {
 		go a.liveActivities.RunReminders(ctx)
 	}
@@ -195,6 +211,29 @@ func (a *App) handleMessage(message mqtt.Message) {
 			if snapshot, ok := a.readings.Latest(deviceID); ok {
 				a.liveActivities.ObserveTelemetry(deviceID, snapshot, message.Retained, time.Now(), a.config.TelemetryStaleAfter)
 			}
+		}
+	}
+}
+
+// Widget refreshes run separately from alarm delivery.
+func (a *App) runWidgetRefreshes(ctx context.Context) {
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case now := <-ticker.C:
+			for _, id := range a.widgetPush.Devices() {
+				var current *telemetry.Snapshot
+				if snapshot, ok := a.readings.Latest(id); ok {
+					current = &snapshot
+				}
+				a.widgetPush.Observe(id, current, a.statuses.Get(id).Connection, now, a.config.TelemetryStaleAfter)
+			}
+			sendContext, cancel := context.WithTimeout(ctx, alertHandlingTimeout)
+			a.widgetPush.Flush(sendContext, now)
+			cancel()
 		}
 	}
 }
