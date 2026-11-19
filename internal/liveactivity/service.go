@@ -403,7 +403,7 @@ func startPayload(deviceID, eventID string, alarmAt, now int64) ([]byte, error) 
 	return json.Marshal(map[string]activityAPS{"aps": {
 		Timestamp: now, Event: "start", ContentState: activityState{PushEventID: eventID},
 		AttributesType: "AlarmActivityAttributes", Attributes: &activityAttributes{PreviewID: uuid, SensorDeviceID: deviceID, RemoteEventID: eventID, AlarmIssuedAt: alarmAt},
-		InputPushToken: 1, Alert: map[string]string{"title": "Stove alarm", "body": "Turn off the stove now if you can safely reach it."},
+		InputPushToken: 1, Alert: map[string]string{"title": "Stove alarm", "body": alert.AlarmNotificationBody},
 	}})
 }
 

@@ -2,8 +2,6 @@ package alert
 
 import (
 	"encoding/json"
-	"fmt"
-	"math"
 )
 
 // Interruption levels from the APNs payload reference. "time-sensitive"
@@ -28,16 +26,18 @@ func IsValidInterruptionLevel(level string) bool {
 // User-facing push text for each condition.
 const (
 	titleNormal   = "Kitchen back to normal"
-	bodyNormal    = "The sensor readings are back in the normal range."
+	bodyNormal    = "Readings are back to normal."
 	titleWarning1 = "Check your kitchen"
-	bodyWarning1  = "The cooking area needs attention. Check the stove and the area around it."
+	bodyWarning1  = "Check your kitchen.\nCheck the stove and nearby area."
 	titleWarning2 = "Check the stove now"
-	bodyWarning2  = "Conditions near the stove may be unsafe. Turn off the stove if you can do so safely."
+	bodyWarning2  = "Check the stove NOW.\nTurn it off if safe."
 	titleAlarm    = "Stove alarm"
-	bodyAlarm     = "Turn off the stove now if you can safely reach it. If you can’t, call someone nearby for help."
-	stoveDetail   = " Stove: %d °C."
+	bodyAlarm     = AlarmNotificationBody
 	soundName     = "default"
 )
+
+// AlarmNotificationBody is shared with the ActivityKit start alert.
+const AlarmNotificationBody = "Turn stove off NOW if safe.\nIf not, call someone nearby."
 
 // BeforeFire includes this file in its app bundle for Critical Alerts.
 const criticalAlarmSoundName = "BeforeFireCriticalSiren.caf"
@@ -57,9 +57,9 @@ func contentFor(condition Condition, alarmInterruptionLevel string) content {
 	case ConditionAlarm:
 		return content{titleAlarm, bodyAlarm, alarmInterruptionLevel, 1.0, true, 10}
 	case ConditionWarning2:
-		return content{titleWarning2, bodyWarning2, InterruptionTimeSensitive, 0.8, true, 10}
+		return content{titleWarning2, bodyWarning2, InterruptionCritical, 0.8, true, 10}
 	case ConditionWarning1:
-		return content{titleWarning1, bodyWarning1, InterruptionActive, 0.5, true, 10}
+		return content{titleWarning1, bodyWarning1, InterruptionCritical, 0.5, true, 10}
 	default:
 		return content{titleNormal, bodyNormal, InterruptionPassive, 0.1, false, 5}
 	}
@@ -103,10 +103,6 @@ type payload struct {
 func buildPayload(deviceID string, report Report, alarmInterruptionLevel string) ([]byte, int, error) {
 	visible := contentFor(report.Condition, alarmInterruptionLevel)
 	body := visible.body
-	if stove := report.Readings.StoveTemperatureC; stove != nil && report.Condition != ConditionNormal &&
-		!math.IsNaN(*stove) && !math.IsInf(*stove, 0) {
-		body += fmt.Sprintf(stoveDetail, int(math.Round(*stove)))
-	}
 
 	notification := payload{
 		APS: aps{
@@ -125,7 +121,11 @@ func buildPayload(deviceID string, report Report, alarmInterruptionLevel string)
 	}
 	if visible.hasSound {
 		if visible.interruptionLevel == InterruptionCritical {
-			notification.APS.Sound = criticalSound{Critical: 1, Name: criticalAlarmSoundName, Volume: 1.0}
+			name := soundName
+			if report.Condition == ConditionAlarm {
+				name = criticalAlarmSoundName
+			}
+			notification.APS.Sound = criticalSound{Critical: 1, Name: name, Volume: 1.0}
 		} else {
 			notification.APS.Sound = soundName
 		}

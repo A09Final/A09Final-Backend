@@ -15,6 +15,7 @@ import (
 	"github.com/dericknorlan/beforefire-backend/internal/device"
 	"github.com/dericknorlan/beforefire-backend/internal/liveactivity"
 	"github.com/dericknorlan/beforefire-backend/internal/telemetry"
+	"github.com/dericknorlan/beforefire-backend/internal/widgetpush"
 )
 
 // CommandExecutor is implemented by *command.Service.
@@ -39,6 +40,7 @@ type Dependencies struct {
 	Devices         DeviceLister
 	Readings        ReadingsSource
 	LiveActivities  *liveactivity.Service
+	WidgetPush      *widgetpush.Service
 	IsMQTTConnected func() bool
 	// Readings older than this are marked isStale in the response.
 	TelemetryStaleAfter time.Duration
@@ -88,6 +90,7 @@ func NewHandler(dependencies Dependencies) http.Handler {
 	mux.HandleFunc("GET /v1/devices/{deviceId}/readings", routes.deviceReadings)
 	mux.HandleFunc("POST /v1/devices/{deviceId}/commands", routes.sendCommand)
 	mux.HandleFunc("PUT /v1/devices/{deviceId}/live-activity-token", routes.registerLiveActivityToken)
+	mux.HandleFunc("PUT /v1/devices/{deviceId}/widget-token", routes.registerWidgetToken)
 	return mux
 }
 

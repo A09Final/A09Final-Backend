@@ -488,3 +488,38 @@ Yang **belum** diuji:
 - `GET /status` tidak butuh tanda tangan (hanya membuka status online/offline).
 - Push untuk Live Activity (`apns-push-type: liveactivity`) belum dibuat.
 - Prototipe memakai PoP sebagai password MQTT. Untuk produksi, buat password terpisah per board saat flashing (`scripts/mqtt-user.sh add <ID>` tanpa password akan membuatkannya).
+
+
+## WidgetKit status updates
+
+The iOS 26+ Kitchen Status widget can refresh without opening BeforeFire.
+The widget registers a separate WidgetKit token. It does not use the APNs alert token or the ActivityKit token.
+
+- `PUT /v1/devices/{deviceId}/widget-token` requires the sensor read key in `Authorization: Bearer <readKey>`.
+- Register: `{"installationId":"<UUID>","pushToken":"<WidgetKit hex token>"}`.
+- Remove: `{"installationId":"<UUID>","remove":true}`. The app retains failed removals and retries them.
+- The backend observes the latest telemetry and sensor connection. A change to the condition, rule, validity, sensor availability, or freshness queues a widget refresh. Numeric readings and absence-duration increments do not each send a push.
+- Changes are coalesced for up to 10 seconds per installation. Failed sends retry after 10 seconds. A 410 response removes the token. Configuration errors do not remove it.
+- Requests use `apns-push-type: widgets`, `apns-topic: <APNS_TOPIC>.push-type.widgets`, priority 5, and `{"aps":{"content-changed":true}}`. They contain no alert text or sound.
+- iOS budgets these refreshes. Delivery does not guarantee an immediate widget update. Periodic timelines remain enabled. Critical Alerts and Live Activities keep their separate paths.
+
+`WIDGET_PUSH_STATE_FILE` stores subscriptions. Its default is `data/widget-push.json`. Docker uses `/state/widget-push.json` in the existing persistent state volume. Protect this file because it contains device tokens. A store error disables widget registration and is logged; it does not stop alarm delivery.
+
+Deploy this backend and install the updated app/widget together. Open the app once to share the sensor link. Add Kitchen Status to the Home Screen. Confirm that the widget token endpoint returns 204, then change the sensor condition with BeforeFire in the background. Test sandbox for Xcode builds and production for TestFlight. These steps require physical-device validation.
+
+Reference: https://developer.apple.com/documentation/widgetkit/updating-widgets-with-widgetkit-push-notifications
+
+
+### Critical sound policy (2026-11-19)
+
+Warning 1 (Unsafe) and Warning 2 (Dangerous) use Critical Alerts with the short system notification sound: `{"critical":1,"name":"default","volume":1}`. Alarm keeps `BeforeFireCriticalSiren.caf` and its existing reminder/snooze behavior. Normal is silent. Warning notifications do not start the alarm reminder loop or an Alarm Live Activity. These changes require the app's Critical Alerts entitlement and the user's Critical Alerts permission. The iPhone test confirms delivery separately from payload tests.
+
+
+### Compact notification copy (2026-11-19)
+
+APNs bodies use at most two short text lines. They do not append sensor temperatures or rule descriptions. The app keeps detailed guidance in Monitor and the Alarm screen. Alarm repeats and the ActivityKit start alert use the same short Alarm body. System font and display settings can still affect wrapping.
+
+- Unsafe: `Check your kitchen.` / `Check the stove and nearby area.`
+- Dangerous: `Check the stove NOW.` / `Turn it off if safe.`
+- Alarm: `Turn stove off NOW if safe.` / `If not, call someone nearby.`
+- Normal: `Readings are back to normal.`

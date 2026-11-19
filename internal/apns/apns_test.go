@@ -261,3 +261,14 @@ func TestSendRenewsExpiredProviderToken(t *testing.T) {
 		t.Fatalf("sent %d requests, want 2", len(*requests))
 	}
 }
+
+func TestSendUsesWidgetTopic(t *testing.T) {
+	client, requests := newTestAPNs(t, func(int) (int, string) { return http.StatusOK, "" })
+	if err := client.Send(context.Background(), Notification{DeviceToken: "widget-token", PushType: PushTypeWidgets, Priority: PriorityPowerSaving, Payload: []byte(`{"aps":{"content-changed":true}}`)}); err != nil {
+		t.Fatal(err)
+	}
+	headers := (*requests)[0].headers
+	if headers.Get("apns-topic") != "com.dericknorlan.BeforeFire.push-type.widgets" || headers.Get("apns-push-type") != "widgets" || headers.Get("apns-priority") != "5" {
+		t.Fatal("incorrect WidgetKit headers")
+	}
+}

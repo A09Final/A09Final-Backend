@@ -24,6 +24,7 @@ const (
 const (
 	PushTypeAlert        = "alert"
 	PushTypeLiveActivity = "liveactivity"
+	PushTypeWidgets      = "widgets"
 	PriorityImmediate    = 10
 	PriorityPowerSaving  = 5
 )
@@ -159,8 +160,11 @@ func (c *Client) sendOnce(ctx context.Context, notification Notification) error 
 	}
 	request.Header.Set("authorization", "bearer "+providerToken)
 	topic := c.config.Topic
-	if notification.PushType == PushTypeLiveActivity {
+	switch notification.PushType {
+	case PushTypeLiveActivity:
 		topic += ".push-type.liveactivity"
+	case PushTypeWidgets:
+		topic += ".push-type.widgets"
 	}
 	request.Header.Set("apns-topic", topic)
 	request.Header.Set("apns-push-type", notification.PushType)
