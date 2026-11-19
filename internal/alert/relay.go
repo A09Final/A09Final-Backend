@@ -84,9 +84,10 @@ func (r *Relay) Handle(ctx context.Context, deviceID string, payload []byte) (De
 	}
 
 	var (
-		mu     sync.Mutex
-		result DeliveryResult
-		group  sync.WaitGroup
+		mu        sync.Mutex
+		result    DeliveryResult
+		group     sync.WaitGroup
+		badTokens []string // rejected with BadDeviceToken, decided after all sends
 	)
 	if report.Condition == ConditionAlarm && r.config.OnAlarm != nil {
 		group.Add(1)
@@ -119,9 +120,9 @@ func (r *Relay) Handle(ctx context.Context, deviceID string, payload []byte) (De
 			case errors.As(err, &apnsErr) && apnsErr.IsUnregistered():
 				result.Unregistered++
 				logger.Info("push token is no longer registered", "token", MaskToken(token))
-				if r.config.OnUnregisteredToken != nil {
-					go r.config.OnUnregisteredToken(context.WithoutCancel(ctx), deviceID, token)
-				}
+				r.removeToken(ctx, deviceID, token)
+			case errors.As(err, &apnsErr) && apnsErr.IsBadDeviceToken():
+				badTokens = append(badTokens, token)
 			default:
 				result.Failed++
 				logger.Error("notification failed", "token", MaskToken(token), "error", err)
@@ -129,6 +130,30 @@ func (r *Relay) Handle(ctx context.Context, deviceID string, payload []byte) (De
 		}()
 	}
 	group.Wait()
+
+	// APNs accepted another token of this report, so APNS_ENVIRONMENT is
+	// correct and the rejected tokens are old or from the other environment,
+	// for example from an Xcode build when the phones use TestFlight. With a
+	// wrong APNS_ENVIRONMENT every token fails, and then no token is removed.
+	for _, token := range badTokens {
+		if result.Sent > 0 {
+			result.Unregistered++
+			logger.Info("push token is not valid in this APNs environment, removed from the sensor", "token", MaskToken(token))
+			r.removeToken(ctx, deviceID, token)
+		} else {
+			result.Failed++
+			logger.Error("notification failed", "token", MaskToken(token),
+				"error", "BadDeviceToken: check that APNS_ENVIRONMENT matches the app build (development for Xcode, production for TestFlight)")
+		}
+	}
 	logger.Info("alert relayed", "sent", result.Sent, "failed", result.Failed, "unregistered", result.Unregistered)
 	return result, nil
+}
+
+// removeToken asks the sensor unit to forget a push token. It does not wait for
+// the answer, so a slow sensor does not delay the other notifications.
+func (r *Relay) removeToken(ctx context.Context, deviceID, token string) {
+	if r.config.OnUnregisteredToken != nil {
+		go r.config.OnUnregisteredToken(context.WithoutCancel(ctx), deviceID, token)
+	}
 }

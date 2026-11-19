@@ -205,6 +205,72 @@ func TestRelayCountsOtherFailures(t *testing.T) {
 	}
 }
 
+func TestRelayRemovesBadTokenWhenAnotherTokenIsDelivered(t *testing.T) {
+	sender := &fakeSender{failures: map[string]error{
+		tokenB: &apns.Error{StatusCode: 400, Reason: "BadDeviceToken"},
+	}}
+	unregistered := make(chan string, 1)
+	relay := newTestRelay(sender, unregistered)
+	payload := `{"alertId":"a-3","condition":"warning1","pushTokens":["` + tokenA + `","` + tokenB + `"]}`
+
+	result, err := relay.Handle(context.Background(), testDeviceID, []byte(payload))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Sent != 1 || result.Unregistered != 1 || result.Failed != 0 {
+		t.Fatalf("result = %+v", result)
+	}
+	select {
+	case got := <-unregistered:
+		if got != testDeviceID+" "+tokenB {
+			t.Fatalf("unregistered = %q", got)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("the bad token was not removed")
+	}
+}
+
+func TestRelayKeepsBadTokensWhenNoTokenIsDelivered(t *testing.T) {
+	// A wrong APNS_ENVIRONMENT rejects every token. The tokens are correct, so they must stay.
+	badToken := &apns.Error{StatusCode: 400, Reason: "BadDeviceToken"}
+	sender := &fakeSender{failures: map[string]error{tokenA: badToken, tokenB: badToken}}
+	unregistered := make(chan string, 2)
+	relay := newTestRelay(sender, unregistered)
+	payload := `{"alertId":"a-4","condition":"alarm","pushTokens":["` + tokenA + `","` + tokenB + `"]}`
+
+	result, err := relay.Handle(context.Background(), testDeviceID, []byte(payload))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Sent != 0 || result.Unregistered != 0 || result.Failed != 2 {
+		t.Fatalf("result = %+v", result)
+	}
+	select {
+	case got := <-unregistered:
+		t.Fatalf("token removed after a configuration error: %q", got)
+	case <-time.After(50 * time.Millisecond):
+	}
+}
+
+func TestRelayKeepsTokensAfterOtherBadRequests(t *testing.T) {
+	sender := &fakeSender{failures: map[string]error{
+		tokenB: &apns.Error{StatusCode: 400, Reason: "DeviceTokenNotForTopic"},
+	}}
+	unregistered := make(chan string, 1)
+	relay := newTestRelay(sender, unregistered)
+	payload := `{"alertId":"a-5","condition":"warning1","pushTokens":["` + tokenA + `","` + tokenB + `"]}`
+
+	result, err := relay.Handle(context.Background(), testDeviceID, []byte(payload))
+	if err != nil || result.Sent != 1 || result.Failed != 1 || result.Unregistered != 0 {
+		t.Fatalf("result %+v, err %v", result, err)
+	}
+	select {
+	case got := <-unregistered:
+		t.Fatalf("token removed after %q", got)
+	case <-time.After(50 * time.Millisecond):
+	}
+}
+
 func jsonNumber(value int64) string {
 	encoded, _ := json.Marshal(value)
 	return string(encoded)
